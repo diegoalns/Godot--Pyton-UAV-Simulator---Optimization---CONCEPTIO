@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3 uid="uid://dvmrpdshi0im6"]
+
+[ext_resource type="MeshLibrary" uid="uid://dxpupn7gkp8yc" path="res://resources/Meshs/cell_library.meshlib" id="2_mesh_library"]
+
+[node name="TerrainGridMap" type="Node3D"]
+
+[node name="GridMap" type="GridMap" parent="."]
+mesh_library = ExtResource("2_mesh_library")
+cell_size = Vector3(702, 100, 927)

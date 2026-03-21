@@ -1,0 +1,266 @@
+================================================================================
+                    GODOT UAV SIMULATOR - DRONE MODELS
+================================================================================
+
+This document describes the three drone models being simulated in the 
+Godot-UAV-Simulator project, including their specifications, performance 
+characteristics, and usage patterns.
+
+================================================================================
+1. LONG RANGE FWVTOL (Fixed-Wing Vertical Take-Off and Landing)
+================================================================================
+
+Purpose: Long-range missions with high efficiency and speed
+
+PERFORMANCE SPECIFICATIONS:
+---------------------------
+Max Speed:              55.0 m/s (~200 km/h)
+Max Range:              150,000 meters (150 km)
+Battery Capacity:       2,000 Wh
+Power Consumption:      800 W (efficient at cruise speed)
+Payload Capacity:       5.0 kg
+Cruise Altitude:        50.0 meters
+
+FLIGHT CHARACTERISTICS:
+-----------------------
+- High cruise speed for rapid long-distance transport
+- Excellent range for extended missions
+- Large battery capacity supports long flight times
+- Substantial cargo capacity for delivery missions
+- Efficient power consumption during cruise phase
+- Optimized for high-altitude operations
+
+USAGE IN PROJECT:
+-----------------
+- Most common drone model (~90% of flight plans)
+- Ideal for urban air mobility and delivery operations
+- Primary workhorse of the simulation fleet
+
+REAL-WORLD REFERENCE:
+---------------------
+Inspired by Boeing MQ-25 Stingray and similar long-range VTOL UAVs
+
+================================================================================
+2. LIGHT QUADCOPTER
+================================================================================
+
+Purpose: Small, agile operations for short-range missions
+
+PERFORMANCE SPECIFICATIONS:
+---------------------------
+Max Speed:              18.0 m/s (~65 km/h)
+Max Range:              8,000 meters (8 km)
+Battery Capacity:       250 Wh
+Power Consumption:      150 W (efficient for size)
+Payload Capacity:       0.5 kg
+Cruise Altitude:        50.0 meters
+
+FLIGHT CHARACTERISTICS:
+-----------------------
+- Moderate speed for local operations
+- Limited range suitable for neighborhood deliveries
+- Small battery optimized for quick missions
+- Minimal payload for light package delivery
+- High efficiency for its weight class
+- Compliant with lower altitude regulations
+
+USAGE IN PROJECT:
+-----------------
+- Appears occasionally in flight plans (~1-2% of missions)
+- Used for short-distance, time-sensitive deliveries
+- Ideal for last-mile logistics in dense urban areas
+
+REAL-WORLD REFERENCE:
+---------------------
+Based on DJI Mini 3 Pro specifications
+
+================================================================================
+3. HEAVY QUADCOPTER
+================================================================================
+
+Purpose: Industrial operations requiring heavy payload capacity
+
+PERFORMANCE SPECIFICATIONS:
+---------------------------
+Max Speed:              25.0 m/s (~90 km/h)
+Max Range:              15,000 meters (15 km)
+Battery Capacity:       800 Wh
+Power Consumption:      400 W (high power for heavy lifting)
+Payload Capacity:       8.0 kg
+Cruise Altitude:        50.0 meters
+
+FLIGHT CHARACTERISTICS:
+-----------------------
+- Good speed despite heavy payload capability
+- Moderate range for industrial operations
+- Large battery to support high power demands
+- Excellent payload capacity for heavy cargo
+- High power consumption due to lifting requirements
+- Medium altitude operations for cargo transport
+
+USAGE IN PROJECT:
+-----------------
+- Appears in select flight plans (~5-8% of missions)
+- Used for heavy cargo and industrial deliveries
+- Specialized missions requiring high payload capacity
+
+REAL-WORLD REFERENCE:
+---------------------
+Based on DJI M300 RTK specifications
+
+================================================================================
+COMMON FEATURES ACROSS ALL MODELS
+================================================================================
+
+SAFETY SYSTEMS:
+---------------
+Collision Detection Radius:     15.0 meters (30m diameter safety zone)
+Waypoint Arrival Threshold:     5.0 meters
+Collision Response:              Detection and logging (no avoidance)
+
+NAVIGATION SYSTEMS:
+-------------------
+Route Planning:                  WebSocket-based with server communication
+Fallback System:                 None - flights cancelled if no route received
+Movement Type:                   Holonomic (direct waypoint following)
+
+FLIGHT PHASES:
+--------------
+1. Takeoff    - Climb to cruise altitude (60% max speed)
+2. Cruise     - Full speed flight at cruise altitude
+3. Approach   - Reduce speed for landing preparation (70% max speed)
+4. Landing    - Slow descent to destination (40% max speed)
+5. Return     - Reverse route back to origin
+
+BATTERY MANAGEMENT:
+-------------------
+- Dynamic power consumption based on speed
+- Speed factor formula: 1.0 + (current_speed / max_speed) * 0.5
+- Real-time battery monitoring
+- Mission abort on battery depletion
+
+WAYPOINT SYSTEM:
+----------------
+- Server-requested routes via WebSocket
+- 90-second timeout - flight cancelled if no route received
+- Drones only fly if Python server provides valid route (status: "success")
+- All failure cases (timeout, no_path, error, invalid JSON) cancel flight
+- Intermediate waypoints for flights > 5km (one per 10km) - only in server-provided routes
+- Altitude management for different flight phases
+
+================================================================================
+IMPLEMENTATION DETAILS
+================================================================================
+
+CODE LOCATION:
+--------------
+Model definitions:      scripts/drone/drone.gd (lines 145-186)
+Drone management:       scripts/core/drone_manager.gd
+Flight plan data:       data/DP1_DP2_DP3_flight_plans.csv
+
+DATA STRUCTURE:
+---------------
+Each drone model is defined in the _set_model_attributes() function using
+a match statement that assigns six key performance parameters:
+- max_speed (m/s)
+- max_range (meters)
+- battery_capacity (Wh)
+- power_consumption (W)
+- payload_capacity (kg)
+- cruise_altitude (meters)
+
+COLLISION DETECTION:
+--------------------
+- Implemented using Godot's Area3D node system
+- Automatic collision detection via physics engine
+- SphereShape3D collision volume (15m radius)
+- Real-time collision event logging to CSV
+
+VISUALIZATION:
+--------------
+- 3D mesh representation (LRVTOL_UAV.glb)
+- Real-time position updates
+- Visual collision indicators
+- Route visualization system
+
+================================================================================
+FLIGHT PLAN STATISTICS (from DP1_DP2_DP3_flight_plans.csv)
+================================================================================
+
+Total Flight Plans:     50
+
+Model Distribution:
+-------------------
+Long Range FWVTOL:      45 flights (90%)
+Heavy Quadcopter:       4 flights (8%)
+Light Quadcopter:       1 flight (2%)
+
+Drone Ports Used:
+-----------------
+DP2:                    49 flights (98%)
+DP1:                    1 flight (2%)
+
+Mission Types:
+--------------
+- Urban air mobility
+- Package delivery
+- Cargo transport
+- Multi-destination routing
+
+Flight Ceiling Range:
+---------------------
+Minimum:                50.0 meters
+Maximum:                400.0 meters
+
+Estimated Flight Times:
+-----------------------
+Shortest:               1.45 minutes (FP000024 - Light Quadcopter)
+Longest:                11.05 minutes (FP000045 - Long Range FWVTOL)
+Average:                ~8-9 minutes
+
+================================================================================
+DESIGN REFERENCES AND STANDARDS
+================================================================================
+
+REGULATORY COMPLIANCE:
+----------------------
+- FAA Part 107 commercial drone regulations
+- NASA UAM (Urban Air Mobility) studies
+- Urban airspace management guidelines
+
+TECHNICAL REFERENCES:
+---------------------
+- Boeing MQ-25 Stingray (Long Range FWVTOL)
+- DJI Mini 3 Pro (Light Quadcopter - 34min flight, 16m/s)
+- DJI M300 RTK (Heavy Quadcopter - 55min flight, 15m/s, 2.7kg payload)
+
+SIMULATION FEATURES:
+--------------------
+- Real-time physics (simplified holonomic movement)
+- CSV-based flight plan management
+- WebSocket communication for route planning
+- Collision detection and logging
+- Battery and range management
+- Multi-drone coordination
+
+================================================================================
+FILE INFORMATION
+================================================================================
+
+Generated:              October 27, 2025
+Project:                Godot-UAV-Simulator
+Location:               C:\Users\ALV\OneDrive\PPGAO_2024_2027\2025\UAS-Planner
+Purpose:                Documentation of drone model specifications
+
+For more information, see:
+- scripts/drone/drone.gd
+- scripts/core/drone_manager.gd
+- data/DP1_DP2_DP3_flight_plans.csv
+- TERRAIN_SYSTEM_README.md
+
+================================================================================
+END OF DOCUMENT
+================================================================================
+
+
+

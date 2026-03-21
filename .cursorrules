@@ -1,0 +1,59 @@
+# Godot UAV Simulator - Cursor Rules (Draft)
+
+## Scope
+
+These rules apply to all coding tasks in this repository.
+
+## 1) Documentation Sync Is Mandatory
+
+After **any code change**, always review and update:
+
+- `README.md`
+- `ARCHITECTURE.md`
+
+Also update these when relevant:
+
+- `docs/RUN_MODES.md` (if execution paths, CLI flags, or run behavior changes)
+- `docs/EXPERIMENT_TEMPLATE.md` (if experiment structure/process changes)
+
+## 2) Required Post-Change Checklist
+
+Before finishing a coding task, the agent must confirm:
+
+- [ ] Code changes are complete
+- [ ] `README.md` reviewed and updated
+- [ ] `ARCHITECTURE.md` reviewed and updated
+- [ ] `docs/RUN_MODES.md` reviewed/updated if run modes changed
+- [ ] `docs/EXPERIMENT_TEMPLATE.md` reviewed/updated if experiment workflow changed
+- [ ] Documentation "Last Updated" fields adjusted where applicable
+- [ ] Documentation reflects actual implementation and paths
+
+## 3) Reporting Format Required in Final Response
+
+When code is changed, the final response must include:
+
+1. Files modified
+2. Documentation files reviewed
+3. Documentation files updated
+4. Short explanation of why each doc update was needed (or why no update was needed)
+
+## 4) Run-Mode Consistency Rule
+
+Do not introduce undocumented run behavior.
+
+If adding/changing execution behavior, ensure consistency across:
+- `README.md`
+- `ARCHITECTURE.md`
+- `docs/RUN_MODES.md`
+
+## 5) Experiment Organization Rule
+
+New experiments must follow the `Experiments/ExN-*` pattern and align with `docs/EXPERIMENT_TEMPLATE.md`.
+Do not mix experiment-only orchestration logic into core runtime modules unless explicitly requested.
+
+## 6) Safety / Hygiene
+
+- Do not revert unrelated user changes.
+- Do not use destructive git commands unless explicitly requested.
+- Prefer minimal, targeted edits.
+- Keep docs and code aligned in the same task; do not defer doc updates.
