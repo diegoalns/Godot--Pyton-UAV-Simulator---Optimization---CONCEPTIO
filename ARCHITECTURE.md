@@ -616,6 +616,8 @@ Canonical run-mode matrix and commands are maintained in `docs/RUN_MODES.md`.
 
 **Purpose**: Simulation-based combinatorial optimization for air-corridor edge-group orientation using a binary Genetic Algorithm.
 
+Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtPath-GA/GA-Experiment1-Parameters.txt`.
+
 **Responsibilities**:
 - Loads lattice graph and builds corridor-group variables using the same grouping logic as `Visualize_Air_Corridor_Binary_Edge_Selection_updated.py`
 - Uses contiguous air-corridor segment grouping (layer + axis + fixed index + segment ID) with forward/reverse sets split by grid-direction sign
@@ -658,20 +660,27 @@ Canonical run-mode matrix and commands are maintained in `docs/RUN_MODES.md`.
 - `route/mean_no_valid_route_payload_godot`
 - `ga/diversity_hamming_mean`
 - `time/generation_seconds`
+- Terminal generation output additionally reports best-individual replication diagnostics:
+  - `best_seed_scores`: per-seed best-individual fitness as `seed:score` pairs
+  - `best_rep_std`: std-dev across those per-seed best-individual fitness values
 - Runtime dashboard behavior:
   - TensorBoard can be auto-launched by `GA-Experiment1.py` at run start
   - Default TensorBoard port is `6007` (configurable via `--tensorboard-port`)
   - Optional auto-open browser to configured URL (`--tensorboard-host`, `--tensorboard-port`)
   - Can be disabled with `--no-auto-launch-tensorboard` and `--no-auto-open-tensorboard-browser`
   - TensorBoard subprocess logs are persisted per run in `tensorboard_process.log`
+  - Auto-launch validates short-lived startup: if the TensorBoard process exits immediately, launch is treated as failed and a warning is emitted
+  - Scalar metrics are flushed each generation to improve live dashboard update consistency
   - **Log level** (`--log-level`): `quiet` (default), `normal`, `verbose`. Quiet: TensorBoard enabled; Python `SIM_LOG_LEVEL=ERROR`; Godot skips simple_log and summary JSON (`GA_LOG_LEVEL`); per-rep dirs removed after reading metrics. Normal: TensorBoard and INFO. Verbose: DEBUG. Godot reads `GA_LOG_LEVEL`; SimpleLogger skips main drone-state log when quiet; SimulationEngine skips writing `godot_summary.json` when quiet.
 
 **Output Artifacts (run folder)**:
 - `generation_metrics.csv`
+  - Includes `best_seed_fitness_scores` and `best_replication_fitness_std` columns
 - `best_solution.json`
 - `final_validation_summary.json`
 - `sensitivity_analysis.csv`
 - `tensorboard/` event files
+- `terminal_output.txt` (mirrored GA terminal stdout/stderr for that run)
 
 **Simulation Adapter Contract**:
 - Integrated mode (default):

@@ -19,6 +19,7 @@ TensorBoard logs are written per generation for live monitoring.
 from __future__ import annotations
 
 import argparse
+import atexit
 import csv
 import hashlib
 import json
@@ -36,7 +37,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, TextIO, Tuple
 
 import networkx as nx
 import numpy as np
@@ -71,14 +72,41 @@ class EvalResult:
     invalid_count: int
     is_invalid: bool
     replications: int
+    per_seed_fitness: List[float]
+    replication_fitness_std: float
 
 
 class NullSummaryWriter:
     def add_scalar(self, *_args, **_kwargs) -> None:
         return
 
+    def flush(self) -> None:
+        return
+
     def close(self) -> None:
         return
+
+
+class TeeTextIO:
+    """
+    Mirror writes to the original stream and a run-scoped log file.
+    """
+
+    def __init__(self, primary: TextIO, mirror: TextIO) -> None:
+        self.primary = primary
+        self.mirror = mirror
+
+    def write(self, text: str) -> int:
+        written = self.primary.write(text)
+        self.mirror.write(text)
+        return written
+
+    def flush(self) -> None:
+        self.primary.flush()
+        self.mirror.flush()
+
+    def isatty(self) -> bool:
+        return bool(getattr(self.primary, "isatty", lambda: False)())
 
 
 def launch_tensorboard(
@@ -117,6 +145,9 @@ def launch_tensorboard(
         return None, tb_url
     tb_log_file.close()
     time.sleep(1.25)
+    # Detect immediate startup failures (for example: port already in use).
+    if process.poll() is not None:
+        return None, tb_url
     if open_browser:
         try:
             webbrowser.open_new_tab(tb_url)
@@ -717,6 +748,7 @@ def evaluate_chromosome(
         return cache[cache_key]
 
     collisions: List[float] = []
+    per_seed_fitness: List[float] = []
     no_path_count = 0
     timeout_count = 0
     server_error_count = 0
@@ -750,6 +782,7 @@ def evaluate_chromosome(
             nv = 0
 
         collisions.append(c)
+        per_seed_fitness.append(float(c + n + t))
         no_path_count += n
         timeout_count += t
         server_error_count += se
@@ -761,6 +794,7 @@ def evaluate_chromosome(
     invalid_count = no_path_count + timeout_count
     is_invalid = invalid_count >= invalid_threshold
     fitness = float(total_collisions + no_path_count + timeout_count)
+    replication_fitness_std = float(np.std(per_seed_fitness)) if per_seed_fitness else 0.0
     result = EvalResult(
         fitness=fitness,
         mean_collisions=mean_c,
@@ -772,6 +806,8 @@ def evaluate_chromosome(
         invalid_count=invalid_count,
         is_invalid=is_invalid,
         replications=len(collisions),
+        per_seed_fitness=per_seed_fitness,
+        replication_fitness_std=replication_fitness_std,
     )
     cache[cache_key] = result
     return result
@@ -946,9 +982,28 @@ def main() -> None:
     run_dir = run_root / run_id
     run_tmp_dir = run_dir / "tmp"
     tb_dir = run_dir / "tensorboard"
+    terminal_output_path = run_dir / "terminal_output.txt"
     run_dir.mkdir(parents=True, exist_ok=True)
     run_tmp_dir.mkdir(parents=True, exist_ok=True)
     tb_dir.mkdir(parents=True, exist_ok=True)
+
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    terminal_output_file = terminal_output_path.open("w", encoding="utf-8")
+    sys.stdout = TeeTextIO(original_stdout, terminal_output_file)
+    sys.stderr = TeeTextIO(original_stderr, terminal_output_file)
+
+    def _restore_streams_and_close_terminal_log() -> None:
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+        try:
+            terminal_output_file.flush()
+        except Exception:
+            pass
+        terminal_output_file.close()
+
+    atexit.register(_restore_streams_and_close_terminal_log)
+    print(f"Terminal output log: {terminal_output_path}")
 
     writer = SummaryWriter(log_dir=str(tb_dir)) if SummaryWriter is not None else NullSummaryWriter()
     if SummaryWriter is None:
@@ -967,7 +1022,7 @@ def main() -> None:
             print(f"TensorBoard auto-started at: {tb_url}")
             print(f"TensorBoard process log: {run_dir / 'tensorboard_process.log'}")
         else:
-            print("WARNING: TensorBoard auto-start failed. You can still launch it manually.")
+            print("WARNING: TensorBoard auto-start failed. Check tensorboard_process.log and launch manually if needed.")
 
     print("=" * 88)
     print("GA-EXPERIMENT1: GODOT SIMULATION-BASED COMBINATORIAL OPTIMIZATION")
@@ -1061,10 +1116,17 @@ def main() -> None:
 
         gen_best_idx = int(np.argmin(fitness_values))
         gen_best_fit = float(fitness_values[gen_best_idx])
+        gen_best_eval = evals[gen_best_idx]
         gen_mean_fit = float(np.mean(fitness_values))
         gen_std_fit = float(np.std(fitness_values))
         num_invalid = int(np.sum(invalid_flags))
-        best_invalid_count = int(evals[gen_best_idx].invalid_count)
+        best_invalid_count = int(gen_best_eval.invalid_count)
+        best_replication_fitness_std = float(gen_best_eval.replication_fitness_std)
+        best_seed_scores = [float(x) for x in gen_best_eval.per_seed_fitness]
+        best_seed_ids = gen_seeds[: len(best_seed_scores)]
+        best_seed_scores_str = ",".join(
+            f"{int(seed)}:{score:.2f}" for seed, score in zip(best_seed_ids, best_seed_scores)
+        )
         diversity = float(mean_pairwise_hamming(population))
 
         best_bitstring = bitstring_from_array(population[gen_best_idx])
@@ -1099,6 +1161,8 @@ def main() -> None:
             "k_refined_top20": 6 if gen >= 41 else 0,
             "seed_signature_base": seed_signature(base_seeds),
             "seed_signature_full": seed_signature(gen_seeds),
+            "best_replication_fitness_std": best_replication_fitness_std,
+            "best_seed_fitness_scores": best_seed_scores_str,
         }
         generation_rows.append(row)
 
@@ -1114,6 +1178,7 @@ def main() -> None:
         writer.add_scalar("route/mean_no_valid_route_payload_godot", mean_no_valid_route, gen)
         writer.add_scalar("ga/diversity_hamming_mean", diversity, gen)
         writer.add_scalar("time/generation_seconds", gen_seconds, gen)
+        writer.flush()
 
         print(
             f"[Gen {gen:03d}] best={gen_best_fit:.4f} mean={gen_mean_fit:.4f} "
@@ -1123,6 +1188,8 @@ def main() -> None:
             f"mean_error_py={mean_server_error:.2f} "
             f"mean_no_resp_gd={mean_no_response:.2f} "
             f"mean_no_valid_gd={mean_no_valid_route:.2f} "
+            f"best_seed_scores=[{best_seed_scores_str}] "
+            f"best_rep_std={best_replication_fitness_std:.4f} "
             f"diversity={diversity:.4f} t={gen_seconds:.2f}s"
         )
 
@@ -1348,6 +1415,7 @@ def main() -> None:
     print(f"TensorBoard logdir: {tb_dir}")
     print(f"TensorBoard launch command: tensorboard --logdir \"{tb_dir}\"")
     print(f"TensorBoard URL: {tb_url}")
+    print(f"Terminal output log: {terminal_output_path}")
     if tb_process is not None:
         print(f"TensorBoard PID: {tb_process.pid}")
     print(f"Total elapsed: {elapsed:.2f}s")

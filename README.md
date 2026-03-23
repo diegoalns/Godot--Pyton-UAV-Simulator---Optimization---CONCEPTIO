@@ -369,6 +369,7 @@ Recommended rules:
 
 `Experiments/Ex1-ShtPath-GA/GA-Experiment1.py` runs a simulation-based Genetic Algorithm to optimize binary orientation settings for air-corridor edge groups:
 
+- Full parameter reference (defaults + runtime GA behavior): `Experiments/Ex1-ShtPath-GA/GA-Experiment1-Parameters.txt`
 - **Decision variables**: one bit per contiguous corridor segment group (`0=forward`, `1=reverse`)
 - **Grouping source**: uses `identify_air_corridor_edge_groups()` from `Experiments/Ex1-ShtPath-GA/Visualize_Air_Corridor_Binary_Edge_Selection_updated.py`
 - **Grouping rule**: layer + corridor axis + fixed index + contiguous segment ID, with forward/reverse sets derived from grid-direction sign
@@ -402,10 +403,14 @@ Recommended rules:
     - `mean_error_py` (Python server-side validation/processing errors)
     - `mean_no_resp_gd` (Godot-side no response received in time)
     - `mean_no_valid_gd` (Godot-side response missing valid route payload)
+    - `best_seed_scores` (best individual's per-seed fitness as `seed:score`)
+    - `best_rep_std` (standard deviation of best individual's per-seed fitness scores)
   - `generation_metrics.csv`
+    - includes `best_seed_fitness_scores` and `best_replication_fitness_std` per generation
   - `best_solution.json`
   - `final_validation_summary.json`
   - `sensitivity_analysis.csv`
+  - `terminal_output.txt` (mirrored GA terminal stdout/stderr)
 - **Integrated run mode (default)**:
   - Builds an oriented graph per chromosome/seed replication
   - Launches Python `WebSocketServer.py` with `GRAPH_PICKLE_PATH` override
@@ -447,6 +452,9 @@ TensorBoard behavior:
 - Disable auto-launch with `--no-auto-launch-tensorboard`.
 - Disable browser auto-open with `--no-auto-open-tensorboard-browser`.
 - TensorBoard process output is written to `tensorboard_process.log` inside the run folder.
+- Full GA terminal output (stdout/stderr) is mirrored to `terminal_output.txt` inside the run folder.
+- Auto-launch now performs a short startup health check; if TensorBoard exits immediately (for example, port conflict), the run prints a warning instead of reporting a false success.
+- GA metrics are flushed every generation so curves appear more consistently during long runs.
 
 ### Baseline Tests (No Optimization)
 

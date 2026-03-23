@@ -1,0 +1,113 @@
+GA-Experiment1 Parameter Reference
+Source of truth: Experiments/Ex1-ShtPath-GA/GA-Experiment1.py
+Generated: 2026-03-22
+
+Purpose
+- Simulation-based binary Genetic Algorithm (GA) for air-corridor edge orientation optimization.
+- Decision variables are binary genes mapped to corridor edge groups:
+  - 0 -> forward edges
+  - 1 -> reverse edges
+
+Core objective and validity rules
+- Per-seed fitness contribution:
+  fitness_seed = collisions + no_path_count + timeout_count
+- Chromosome fitness over K seeds:
+  fitness = sum(collisions over seeds) + sum(no_path_count over seeds) + sum(timeout_count over seeds)
+- Invalid-pressure metric:
+  invalid_count = no_path_count + timeout_count
+- Invalid flag:
+  is_invalid = (invalid_count >= invalid_threshold)
+- Best-individual replication dispersion metric:
+  best_rep_std = std(per_seed_fitness list)
+
+GA operators and internal behavior
+- Selection: tournament selection (size = --tournament-size), minimizing fitness.
+- Crossover: uniform crossover with probability --crossover-prob.
+- Mutation: bit-flip mutation per gene with:
+  mutation_prob = clip(1 / num_variables, 0.002, 0.03)
+- Replacement: elitist generational replacement.
+  - elites = best --elitism individuals
+  - offspring count = population - elitism
+  - safe fully-elitist carry-over when offspring count <= 0
+- Early stopping:
+  stop when no global-best fitness improvement for --early-stop-patience generations.
+
+Replication / seed schedule (CRN protocol)
+- Same seed list is used across all individuals inside the same generation.
+- Generations 1-40:
+  - Base evaluation uses K=2 seeds for all individuals.
+- Generations 41+:
+  - Base evaluation still uses K=2 seeds for all individuals.
+  - Top 20% (by 2-seed fitness) are re-evaluated with K=6 seeds.
+  - Those top-20% results replace their base evaluations before selecting generation best.
+- Important consequence:
+  after generation 40, generation-best can come from either:
+  - a 6-seed evaluated individual (typically from top 20%), or
+  - a 2-seed evaluated individual (if it still has lower fitness).
+
+Terminal line interpretation (per generation)
+- Printed metrics include:
+  best, mean, std, invalid count, route-failure means, best_seed_scores, best_rep_std, diversity, generation time.
+- best_seed_scores format:
+  [seed_id:fitness_seed, seed_id:fitness_seed, ...]
+- Number of printed seed entries:
+  - 2 entries when best individual has 2-seed evaluation
+  - 6 entries when best individual has 6-seed evaluation
+
+Final-stage validation and sensitivity
+- Candidate set: final population + global-best archive candidate.
+- Ranking for shortlist: archived best-known fitness.
+- Final validation:
+  - top 5 candidates
+  - held-out seed set K=20
+- Sensitivity:
+  - one-bit flip sweep over best validated chromosome
+  - evaluates delta fitness per bit on held-out seeds
+
+Cache and parallel evaluation behavior
+- Cache key:
+  (chromosome_bitstring, seed_signature)
+- Duplicate chromosomes in same batch are de-duplicated.
+- Parallel batch evaluation via thread pool with --workers.
+
+Command-line parameters (defaults)
+- --pickle-file: ./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl
+- --population: 120
+- --generations: 120
+- --tournament-size: 3
+- --crossover-prob: 0.85
+- --elitism: 2
+- --early-stop-patience: 20
+- --invalid-threshold: 1000
+- --invalid-penalty: 10000.0
+- --workers: 18
+- --seed: 160
+- --eval-mode: integrated (choices: integrated, command, mock)
+- --sim-command: "" (required when --eval-mode=command)
+- --sim-timeout-seconds: 360.0
+- --python-exe: sys.executable
+- --websocket-server-script: ./scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py
+- --godot-exe: godot4
+- --godot-project-dir: .
+- --integrated-max-sim-time: 15000.0
+- --server-start-timeout: 20.0
+- --tensorboard-port: 6007
+- --tensorboard-host: 127.0.0.1
+- --auto-launch-tensorboard / --no-auto-launch-tensorboard: default true
+- --auto-open-tensorboard-browser / --no-auto-open-tensorboard-browser: default true
+- --run-root: ./Experiments/Ex1-ShtPath-GA/ga_runs
+
+Runtime guards
+- population >= 2
+- 0 <= elitism <= population
+- workers >= 1
+- For eval-mode=command, sim-command must be provided.
+
+Run artifacts written by GA-Experiment1.py
+- generation_metrics.csv
+- best_solution.json
+- final_validation_summary.json
+- sensitivity_analysis.csv
+- run_config.json
+- tensorboard/ (event files)
+- terminal_output.txt
