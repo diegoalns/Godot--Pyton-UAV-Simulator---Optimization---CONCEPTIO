@@ -80,7 +80,6 @@ def parse_args() -> argparse.Namespace:
         help="Used when --eval-mode=command. Supports {seed}, {input_json}, {output_json}.",
     )
     parser.add_argument("--sim-timeout-seconds", type=float, default=360.0)
-    parser.add_argument("--log-level", type=str, default="quiet", choices=["quiet", "normal", "verbose"])
     parser.add_argument("--python-exe", type=str, default=sys.executable)
     parser.add_argument(
         "--websocket-server-script",
@@ -164,7 +163,6 @@ def main() -> None:
         mode=args.eval_mode,
         sim_command=args.sim_command.strip() or None,
         timeout_seconds=float(args.sim_timeout_seconds),
-        log_level=args.log_level,
         working_dir=Path(__file__).resolve().parents[2],  # repository root
         base_graph=graph,
         base_metadata=metadata if isinstance(metadata, dict) else {},

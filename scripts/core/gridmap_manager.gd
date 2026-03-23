@@ -31,7 +31,7 @@ func _ready():
 	# Load the mesh library resource
 	mesh_library = load("res://resources/Meshs/cell_library.meshlib")
 	if not mesh_library:
-		_log_error("terrain_mesh_library_load_failed", {"resource": "res://resources/Meshs/cell_library.meshlib"})
+		push_error("Failed to load cell_library.meshlib")
 		return
 	
 	_log_info("terrain_mesh_library_loaded")
@@ -47,12 +47,6 @@ func _log_warning(event: String, data: Dictionary = {}):
 		logger_instance.log_event_warning(DebugLogger.Category.TERRAIN, event, data)
 	else:
 		DebugLogger.print_table_row_fallback("WARNING", "TERRAIN", event, data)
-
-func _log_error(event: String, data: Dictionary = {}):
-	if logger_instance:
-		logger_instance.log_event_error(DebugLogger.Category.TERRAIN, event, data)
-	else:
-		DebugLogger.print_table_row_fallback("ERROR", "TERRAIN", event, data)
 
 func initialize_gridmap(gridmap: GridMap):
 	"""
@@ -74,7 +68,7 @@ func load_terrain_data():
 	"""
 	var file = FileAccess.open("res://data/Filtered_FAA_UAS_FacilityMap_Data_LGA.csv", FileAccess.READ)
 	if not file:
-		_log_error("terrain_csv_open_failed", {"file": "res://data/Filtered_FAA_UAS_FacilityMap_Data_LGA.csv"})
+		push_error("Failed to open Filtered_FAA_UAS_FacilityMap_Data_LGA.csv")
 		return false
 	
 	# Skip header line
@@ -364,11 +358,11 @@ func populate_gridmap():
 	Each tile is placed at the exact grid index derived from CSV coordinates
 	"""
 	if not gridmap_node:
-		_log_error("terrain_population_failed_gridmap_uninitialized", {})
+		push_error("GridMapManager: GridMap node not initialized")
 		return false
 		
 	if terrain_data.is_empty():
-		_log_error("terrain_population_failed_no_terrain_data", {})
+		push_error("GridMapManager: No terrain data loaded")
 		return false
 	
 	_log_info("terrain_population_started", {
@@ -442,7 +436,7 @@ func world_position_to_grid_coords_direct(world_pos: Vector3) -> Vector3i:
 	@return Vector3i - Grid coordinates (returns Vector3i(-1,-1,-1) if out of bounds)
 	"""
 	if grid_size_x == 0 or grid_size_z == 0 or not gridmap_node:
-		_log_warning("terrain_grid_query_before_initialization", {})
+		push_warning("GridMapManager: Grid not initialized")
 		return Vector3i(-1, -1, -1)
 	
 	# Convert world position to position relative to GridMap origin

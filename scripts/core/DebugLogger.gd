@@ -91,29 +91,10 @@ func _ready():
 	# Initialize all categories as enabled by default
 	for category in Category.values():
 		category_enabled[category] = true
-
-	# Apply batch run log mode from environment so Godot matches Python orchestration.
-	var ga_log_level = OS.get_environment("GA_LOG_LEVEL").strip_edges().to_lower()
-	if ga_log_level == "quiet":
-		current_log_level = LogLevel.ERROR
-		current_verbosity = VerbosityLevel.MINIMAL
-	elif ga_log_level == "verbose":
-		current_log_level = LogLevel.DEBUG
-		current_verbosity = VerbosityLevel.VERBOSE
-	elif ga_log_level == "normal":
-		current_log_level = LogLevel.INFO
-		current_verbosity = VerbosityLevel.NORMAL
 	
 	# Try to find simulation engine for timestamps (will be set up after simulation starts)
 	# Don't log here to avoid circular initialization issues
 	# simulation_engine will be set when first accessed via get_current_simulation_time()
-
-	# Emit resolved mode once at startup for observability.
-	log_event_info(Category.GENERAL, "logging_mode_applied", {
-		"ga_log_level": ga_log_level if ga_log_level != "" else "(unset)",
-		"log_level": LogLevel.keys()[current_log_level],
-		"verbosity": VerbosityLevel.keys()[current_verbosity]
-	})
 
 # ============================================================================
 # LOGGING METHODS - Main interface for logging
@@ -289,35 +270,11 @@ static func print_table_row_fallback(level_str: String, category_str: String, ev
 	var data_str = format_data_static(data)
 	print(format_table_row_string(ts, level_str, category_str, "godot", event, data_str))
 
-func _parse_level_string(level_str: String) -> int:
-	var normalized = level_str.strip_edges().to_upper()
-	if normalized == "DEBUG":
-		return LogLevel.DEBUG
-	if normalized == "WARNING":
-		return LogLevel.WARNING
-	if normalized == "ERROR":
-		return LogLevel.ERROR
-	return LogLevel.INFO
-
-func _is_category_enabled_by_name(category_str: String) -> bool:
-	var normalized = category_str.strip_edges().to_upper()
-	var category_names = Category.keys()
-	var idx = category_names.find(normalized)
-	if idx == -1:
-		return true
-	var category_value = Category.values()[idx]
-	return category_enabled.get(category_value, true)
-
 func print_table_line(level_str: String, category_str: String, event: String, data_dict: Dictionary = {}):
 	"""
 	Print a single table row. Use when not going through log_message.
 	Ensures header is printed on first use. Source is always "godot".
 	"""
-	var level_value = _parse_level_string(level_str)
-	if level_value < current_log_level:
-		return
-	if not _is_category_enabled_by_name(category_str):
-		return
 	if use_table_format and not _table_header_printed:
 		_table_header_printed = true
 		print(get_table_header())
