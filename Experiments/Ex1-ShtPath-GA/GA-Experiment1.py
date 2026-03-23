@@ -180,6 +180,7 @@ class SimulationAdapter:
         godot_project_dir: Path,
         integrated_max_sim_time: float,
         server_start_timeout: float,
+        log_level: str = "quiet",
     ) -> None:
         self.mode = mode
         self.sim_command = sim_command
@@ -193,6 +194,9 @@ class SimulationAdapter:
         self.godot_project_dir = godot_project_dir
         self.integrated_max_sim_time = integrated_max_sim_time
         self.server_start_timeout = server_start_timeout
+        self.log_level = str(log_level).strip().lower()
+        if self.log_level not in {"quiet", "normal", "verbose"}:
+            self.log_level = "quiet"
         self._port_lock = threading.Lock()
         self._reserved_ports: set[int] = set()
 
@@ -291,7 +295,7 @@ class SimulationAdapter:
             pickle.dump({"graph": g_new, "metadata": self.base_metadata}, f)
 
     @staticmethod
-    def _wait_for_server_ready(server_log_path: Path, timeout_s: float) -> None:
+    def _wait_for_server_ready(server_log_path: Path, timeout_s: float, host: str, port: int) -> None:
         deadline = time.time() + timeout_s
         while time.time() < deadline:
             if server_log_path.exists():
@@ -300,8 +304,23 @@ class SimulationAdapter:
                     return
                 if "server_startup_failed" in text:
                     raise RuntimeError("WebSocket server failed during startup.")
+            # Fallback readiness check for quiet logging modes.
+            try:
+                with socket.create_connection((host, int(port)), timeout=0.25):
+                    return
+            except OSError:
+                pass
             time.sleep(0.25)
         raise TimeoutError("Timed out waiting for WebSocket server startup.")
+
+    @staticmethod
+    def _resolve_runtime_log_levels(log_level: str) -> Tuple[str, str]:
+        normalized = str(log_level).strip().lower()
+        if normalized == "quiet":
+            return "ERROR", "quiet"
+        if normalized == "verbose":
+            return "DEBUG", "verbose"
+        return "INFO", "normal"
 
     @staticmethod
     def _count_collision_starts(collision_csv: Path) -> int:
@@ -392,11 +411,12 @@ class SimulationAdapter:
         simple_log_csv = rep_dir / "simple_log.csv"
         ws_host = "127.0.0.1"
         ws_port = self._select_available_ws_port(rep_hash=rep_hash)
+        sim_log_level, ga_log_level = self._resolve_runtime_log_levels(self.log_level)
 
         env_server = os.environ.copy()
         env_server["GRAPH_PICKLE_PATH"] = str(oriented_graph_pickle)
         env_server["SIM_LOG_FORMAT"] = "table"
-        env_server["SIM_LOG_LEVEL"] = "INFO"
+        env_server["SIM_LOG_LEVEL"] = sim_log_level
         env_server["WS_SERVER_HOST"] = ws_host
         env_server["WS_SERVER_PORT"] = str(ws_port)
 
@@ -409,6 +429,7 @@ class SimulationAdapter:
         env_godot["GA_WEBSOCKET_URL"] = f"ws://{ws_host}:{ws_port}"
         env_godot["GA_COLLISION_LOG_CSV"] = str(collision_csv)
         env_godot["GA_SIMPLE_LOG_CSV"] = str(simple_log_csv)
+        env_godot["GA_LOG_LEVEL"] = ga_log_level
 
         server_proc = None
         godot_proc = None
@@ -434,7 +455,7 @@ class SimulationAdapter:
                     )
 
                 try:
-                    self._wait_for_server_ready(server_log, self.server_start_timeout)
+                    self._wait_for_server_ready(server_log, self.server_start_timeout, ws_host, ws_port)
                     startup_last_error = None
                     break
                 except Exception as e:
@@ -489,6 +510,31 @@ class SimulationAdapter:
         no_path_count, timeout_count = self._parse_pathfinder_status_counts(server_log)
         server_error_count = self._parse_server_error_count(server_log)
         no_response_count, no_valid_route_count = self._parse_godot_response_failure_counts(godot_log)
+        rep_metrics = {
+            "seed": int(seed),
+            "bitstring": str(payload.get("bitstring", "")),
+            "log_level": self.log_level,
+            "collisions": int(collisions),
+            "no_path_count": int(no_path_count),
+            "timeout_count": int(timeout_count),
+            "server_error_count": int(server_error_count),
+            "no_response_count": int(no_response_count),
+            "no_valid_route_count": int(no_valid_route_count),
+            "websocket_port": int(ws_port),
+        }
+        rep_metrics_path = rep_dir / "rep_metrics.json"
+        rep_metrics_path.write_text(json.dumps(rep_metrics, indent=2), encoding="utf-8")
+
+        # Keep artifacts proportional to log level so logging and disk usage follow the same mode.
+        if self.log_level == "quiet":
+            for artifact_path in (oriented_graph_pickle, server_log, godot_log, simple_log_csv, ga_summary):
+                if artifact_path.exists():
+                    artifact_path.unlink()
+        elif self.log_level == "normal":
+            for artifact_path in (oriented_graph_pickle, simple_log_csv):
+                if artifact_path.exists():
+                    artifact_path.unlink()
+
         return {
             "collisions": collisions,
             "no_path_count": no_path_count,
@@ -498,10 +544,13 @@ class SimulationAdapter:
             "no_valid_route_count": no_valid_route_count,
             "artifacts": {
                 "rep_dir": str(rep_dir),
-                "server_log": str(server_log),
-                "godot_log": str(godot_log),
-                "ga_summary_json": str(ga_summary),
-                "collision_csv": str(collision_csv),
+                "rep_metrics_json": str(rep_metrics_path),
+                "server_log": str(server_log) if server_log.exists() else "",
+                "godot_log": str(godot_log) if godot_log.exists() else "",
+                "ga_summary_json": str(ga_summary) if ga_summary.exists() else "",
+                "collision_csv": str(collision_csv) if collision_csv.exists() else "",
+                "simple_log_csv": str(simple_log_csv) if simple_log_csv.exists() else "",
+                "oriented_graph_pickle": str(oriented_graph_pickle) if oriented_graph_pickle.exists() else "",
                 "websocket_port": ws_port,
             },
         }
@@ -920,6 +969,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--sim-timeout-seconds", type=float, default=360.0)
+    parser.add_argument("--log-level", type=str, default="quiet", choices=["quiet", "normal", "verbose"])
     parser.add_argument("--python-exe", type=str, default=sys.executable)
     parser.add_argument(
         "--websocket-server-script",
@@ -1048,6 +1098,7 @@ def main() -> None:
         mode=args.eval_mode,
         sim_command=args.sim_command.strip() or None,
         timeout_seconds=float(args.sim_timeout_seconds),
+        log_level=args.log_level,
         working_dir=Path(__file__).resolve().parents[2],  # repository root
         base_graph=graph,
         base_metadata=_metadata if isinstance(_metadata, dict) else {},

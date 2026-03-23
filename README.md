@@ -338,6 +338,11 @@ ts            level    category       source event                           dat
 Python logger runtime controls:
 - `SIM_LOG_LEVEL`: `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `INFO`)
 - `SIM_LOG_FORMAT`: `table` (default), `json`, or `pretty`
+- Integrated experiment runners map `--log-level` to `SIM_LOG_LEVEL` as: `quiet -> ERROR`, `normal -> INFO`, `verbose -> DEBUG`
+
+Godot logger runtime controls:
+- `GA_LOG_LEVEL`: `quiet`, `normal`, `verbose` (set by integrated experiment runners)
+- `DebugLogger._ready()` maps `GA_LOG_LEVEL` to Godot logger level/verbosity and emits `logging_mode_applied` once at startup
 
 Examples:
 - `SIM_LOG_FORMAT=table` for aligned fixed-width output (default)
@@ -394,7 +399,10 @@ Recommended rules:
   - Reproduction step now safely handles `population == elitism` (fully elitist carry-over), preventing tiny-run crashes
   - Default `population` is set to `120` (override with `--population` as needed)
   - Default `workers` is set to `18` for parallel batch evaluation (override with `--workers`)
-- **Log level** (`--log-level`, default: `quiet`): `quiet` = minimal per-rep I/O (no drone state log, rep dirs deleted after metrics), TensorBoard still enabled; `normal` = standard logs; `verbose` = full logs and Python `SIM_LOG_LEVEL=DEBUG`. Godot respects `GA_LOG_LEVEL` (quiet: skip simple_log and summary JSON).
+- **Log level** (`--log-level`, default: `quiet`): now controls both runtime logging and per-rep artifact retention strategy.
+  - `quiet`: Python `SIM_LOG_LEVEL=ERROR`; Godot `GA_LOG_LEVEL=quiet`; keeps compact `rep_metrics.json` and collision CSV while dropping heavy per-rep debug artifacts on successful reps.
+  - `normal`: Python `SIM_LOG_LEVEL=INFO`; Godot `GA_LOG_LEVEL=normal`; keeps server/Godot logs and collision CSV, but drops heavy intermediate files (for example oriented graph pickle and simple drone-state CSV) on successful reps.
+  - `verbose`: Python `SIM_LOG_LEVEL=DEBUG`; Godot `GA_LOG_LEVEL=verbose`; keeps full per-rep logs/CSVs/JSON artifacts.
 - **Logging/outputs**:
   - TensorBoard per-generation live metrics (`fitness/*`, `invalid/*`, `ga/diversity_hamming_mean`, `time/generation_seconds`) in all log levels including quiet
   - Terminal generation line now also prints mean route-failure components:
@@ -413,6 +421,7 @@ Recommended rules:
   - `terminal_output.txt` (mirrored GA terminal stdout/stderr)
 - **Integrated run mode (default)**:
   - Builds an oriented graph per chromosome/seed replication
+  - Exposes `--log-level` on GA and baseline entrypoints to control Python and Godot runtime logging together
   - Launches Python `WebSocketServer.py` with `GRAPH_PICKLE_PATH` override
   - Uses per-replication WebSocket isolation (`WS_SERVER_HOST`/`WS_SERVER_PORT` + Godot `GA_WEBSOCKET_URL`) so parallel workers do not contend on port `8765`
   - Server startup readiness now accepts either an explicit `server_running` log marker or successful socket connect on the assigned WS port (important when quiet logging suppresses INFO lines)
@@ -465,6 +474,7 @@ This project currently includes two baseline scripts under `Experiments/Ex0-Base
 
 Both baseline scripts reuse the same Python+Godot integrated simulation path as `GA-Experiment1.py` (via `SimulationAdapter`) and output per-replication plus summary artifacts in their respective run folders.
 Both also report collision and fitness dispersion via standard deviation (`collisions_std`, `fitness_std`) in summary CSV outputs and terminal summaries.
+Both baseline scripts accept `--log-level` (`quiet|normal|verbose`) and forward it to `SimulationAdapter`.
 
 Example (original-orientation baseline):
 
@@ -498,6 +508,7 @@ python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" \
 - Ensure Python server is running on `localhost:8765`
 - Check firewall settings
 - Verify no other process is using port 8765
+- Malformed payloads sent to `WebSocketServer.py` are now logged as `received_non_json_message` warnings for visibility
 
 ### Drones Not Launching
 - Check flight plan CSV file format
@@ -527,7 +538,7 @@ python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" \
 
 ---
 
-**Last Updated**: 2026-03-21 - Added tailored `.gitignore` policy for GitHub publishing and generated artifact hygiene
+**Last Updated**: 2026-03-23 - Added mode-coupled integrated artifact retention and tightened Godot logger mode filtering
 **Godot Version**: 4.3 (GL Compatibility)
 **Python Version**: 3.8+
 

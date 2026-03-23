@@ -30,6 +30,10 @@ func _ready():
 	# Get DebugLogger singleton instance (autoload singleton)
 	logger_instance = DebugLogger.get_instance()
 	if logger_instance == null:
+		DebugLogger.print_table_row_fallback("ERROR", "WEBSOCKET", "debug_logger_autoload_missing", {
+			"expected_node": "/root/AppDebugLogger",
+			"script": "res://scripts/core/DebugLogger.gd"
+		})
 		push_error("AppDebugLogger autoload not found (scripts/core/DebugLogger.gd). Check project.godot autoloads.")
 	
 	if logger_instance:

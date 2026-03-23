@@ -86,6 +86,10 @@ def log_ws_error(event: str, **fields):
     log_event("ERROR", "WEBSOCKET", event, **fields)
 
 
+def log_ws_warning(event: str, **fields):
+    log_event("WARNING", "WEBSOCKET", event, **fields)
+
+
 def log_pathfinding(event: str, **fields):
     log_event("INFO", "PATHFINDING", event, **fields)
 
@@ -497,8 +501,14 @@ async def websocket_handler(websocket):
                     # Echo other messages
                     await websocket.send(f"Echo: {message}")
             except json.JSONDecodeError:
-                # Handle non-JSON messages - silently ignore or echo
-                pass
+                # Keep visibility when malformed payloads arrive.
+                sample = str(message).replace("\n", "\\n")[:200]
+                log_ws_warning(
+                    "received_non_json_message",
+                    message_length=len(str(message)),
+                    message_sample=sample,
+                )
+                continue
                 
     except websockets.ConnectionClosed:
         log_ws_info("client_disconnected")

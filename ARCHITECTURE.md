@@ -671,7 +671,11 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
   - TensorBoard subprocess logs are persisted per run in `tensorboard_process.log`
   - Auto-launch validates short-lived startup: if the TensorBoard process exits immediately, launch is treated as failed and a warning is emitted
   - Scalar metrics are flushed each generation to improve live dashboard update consistency
-  - **Log level** (`--log-level`): `quiet` (default), `normal`, `verbose`. Quiet: TensorBoard enabled; Python `SIM_LOG_LEVEL=ERROR`; Godot skips simple_log and summary JSON (`GA_LOG_LEVEL`); per-rep dirs removed after reading metrics. Normal: TensorBoard and INFO. Verbose: DEBUG. Godot reads `GA_LOG_LEVEL`; SimpleLogger skips main drone-state log when quiet; SimulationEngine skips writing `godot_summary.json` when quiet.
+  - **Log level** (`--log-level`): `quiet` (default), `normal`, `verbose`. The same mode now drives both runtime log verbosity and integrated artifact retention:
+    - `quiet`: Python `SIM_LOG_LEVEL=ERROR`; Godot `GA_LOG_LEVEL=quiet`; successful reps keep compact `rep_metrics.json` + collision CSV and drop heavier debug artifacts.
+    - `normal`: Python `SIM_LOG_LEVEL=INFO`; Godot `GA_LOG_LEVEL=normal`; successful reps keep server/Godot logs + collision CSV, while pruning heavy intermediates (oriented graph pickle and simple drone-state CSV).
+    - `verbose`: Python `SIM_LOG_LEVEL=DEBUG`; Godot `GA_LOG_LEVEL=verbose`; successful reps keep full per-rep logs/CSVs/JSON artifacts.
+    - Godot logger table-line output now applies level/category filtering, so mode settings also affect direct table-line emissions.
 
 **Output Artifacts (run folder)**:
 - `generation_metrics.csv`
@@ -707,6 +711,7 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
     - `GA_WEBSOCKET_URL=ws://127.0.0.1:<rep_port>`
     - `GA_COLLISION_LOG_CSV=<rep_collision_log.csv>`
     - `GA_SIMPLE_LOG_CSV=<rep_simple_log.csv>`
+    - `GA_LOG_LEVEL=<quiet|normal|verbose>`
   - Collects objective signals from runtime artifacts:
     - Collisions from per-replication collision CSV (`COLLISION_START` rows)
     - Pathfinder failures from Python server logs (`pathfinding_no_path`, `pathfinding_timeout`)
@@ -758,6 +763,9 @@ The simulation uses a unified fixed-width table format across both runtimes:
 
 - **Godot**: `DebugLogger` emits `ts | level | category | source | event | data` rows
 - **Python**: `sim_logger.py` uses the same column layout when `SIM_LOG_FORMAT=table` (default)
+- **Integrated log bridge**: experiment `--log-level` is translated to `SIM_LOG_LEVEL` (Python) and `GA_LOG_LEVEL` (Godot)
+- **Godot startup mode event**: `DebugLogger` applies `GA_LOG_LEVEL` in `_ready()` and emits `logging_mode_applied`
+- **Malformed payload visibility**: Python `WebSocketServer.py` logs `received_non_json_message` warning events instead of silently dropping invalid JSON payloads
 
 Columns: ts (12), level (8), category (14), source (6), event (32), data (150). Source is `godot` or `python`.
 
@@ -1056,6 +1064,6 @@ Both simulation time and system clock time are tracked for:
 
 ---
 
-**Last Updated**: 2026-03-21 - Added repository `.gitignore` guidance for generated runtime/experiment artifacts
-**Documentation Version**: 1.7
+**Last Updated**: 2026-03-23 - Added mode-coupled artifact retention and logger table-line filtering behavior
+**Documentation Version**: 1.8
 

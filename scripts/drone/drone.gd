@@ -263,7 +263,7 @@ func _set_model_attributes():
 			
 		_:
 			# Default to Long Range FWVTOL if unknown model
-			push_warning("Unknown drone model '%s', using Long Range FWVTOL defaults" % model)
+			_log_warning("unknown_drone_model_default_applied", {"model": model, "default_model": "Long Range FWVTOL"})
 			model = "Long Range FWVTOL"
 			_set_model_attributes()
 
@@ -361,7 +361,7 @@ func _set_current_target():
 		
 		# Safety check: ensure waypoint has required fields
 		if not waypoint.has("position") or not waypoint.has("speed"):
-			push_warning("Drone %s: Waypoint %d missing required fields (position or speed)" % [drone_id, current_waypoint_index])
+			_log_warning("waypoint_missing_required_fields", {"drone_id": drone_id, "waypoint_index": current_waypoint_index})
 			completed = true  # Mark as completed to prevent further errors
 			return
 		
@@ -879,7 +879,7 @@ func _finalize_route_setup():
 		_set_current_target()
 		# Route finalized successfully - silent operation
 	else:
-		push_warning("Drone %s has no valid route!" % drone_id)
+		_log_warning("drone_has_no_valid_route", {"drone_id": drone_id})
 		completed = true
 
 func _on_route_response_timeout():

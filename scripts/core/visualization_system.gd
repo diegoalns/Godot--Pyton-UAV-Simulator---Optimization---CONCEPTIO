@@ -42,6 +42,24 @@ var model_yaw_offset_degrees: float = 0.0
 
 var logger_instance: Node = null
 
+func _log_info(event: String, data: Dictionary = {}):
+	if logger_instance:
+		logger_instance.log_event_info(DebugLogger.Category.VISUALIZATION, event, data)
+	else:
+		DebugLogger.print_table_row_fallback("INFO", "VISUALIZATION", event, data)
+
+func _log_warning(event: String, data: Dictionary = {}):
+	if logger_instance:
+		logger_instance.log_event_warning(DebugLogger.Category.VISUALIZATION, event, data)
+	else:
+		DebugLogger.print_table_row_fallback("WARNING", "VISUALIZATION", event, data)
+
+func _log_error(event: String, data: Dictionary = {}):
+	if logger_instance:
+		logger_instance.log_event_error(DebugLogger.Category.VISUALIZATION, event, data)
+	else:
+		DebugLogger.print_table_row_fallback("ERROR", "VISUALIZATION", event, data)
+
 # Drone label configuration
 var show_drone_labels: bool = true  # bool: Whether to display labels above drones (default: true)
 var label_offset_height: float = 50.0  # float: Vertical offset in meters above drone for label positioning (size: 1 float in meters, reduced from 200.0 for better visibility)
@@ -315,7 +333,7 @@ func setup_terrain():
 	# Load the mesh library resource
 	var mesh_library = load("res://resources/Meshs/cell_library.meshlib")
 	if not mesh_library:
-		push_error("VisualizationSystem: Failed to load cell_library.meshlib")
+		_log_error("terrain_mesh_library_load_failed", {"resource": "res://resources/Meshs/cell_library.meshlib"})
 		return
 	
 	# Configure GridMap with mesh library and proper cell size
@@ -340,9 +358,9 @@ func setup_terrain():
 			if logger_instance:
 				logger_instance.print_table_line("INFO", "VISUALIZATION", "terrain_initialized", {})
 		else:
-			push_error("VisualizationSystem: Failed to populate terrain GridMap")
+			_log_error("terrain_population_failed", {})
 	else:
-		push_error("VisualizationSystem: Failed to load terrain data")
+		_log_error("terrain_data_load_failed", {})
 
 func setup_collision_markers():
 	"""
@@ -664,7 +682,7 @@ func add_collision_marker(marker_position: Vector3, drone1_id: String, drone2_id
 		return
 	
 	if not collision_marker_container:
-		push_warning("VisualizationSystem: Collision marker container not initialized")
+		_log_warning("collision_marker_container_uninitialized", {})
 		return
 	
 	# Create marker mesh - use a sphere for visibility

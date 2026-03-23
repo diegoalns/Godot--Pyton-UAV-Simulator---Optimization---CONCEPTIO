@@ -3,6 +3,7 @@ extends Node
 
 var drones: Dictionary = {}
 var visualization_system: VisualizationSystem
+var logger_instance: Node = null
 
 # Static reference to VisualizationSystem for collision marker access
 static var visualization_system_ref: VisualizationSystem = null
@@ -10,6 +11,14 @@ static var visualization_system_ref: VisualizationSystem = null
 func set_visualization_system(vis_system: VisualizationSystem):
 	visualization_system = vis_system
 	DroneManager.visualization_system_ref = vis_system  # Set static reference for drone access
+	if logger_instance == null:
+		logger_instance = DebugLogger.get_instance()
+
+func _log_warning(event: String, data: Dictionary = {}):
+	if logger_instance:
+		logger_instance.log_event_warning(DebugLogger.Category.DRONE, event, data)
+	else:
+		DebugLogger.print_table_row_fallback("WARNING", "DRONE", event, data)
 
 func create_test_drone(id: String, start: Vector3, end: Vector3, model: String, origin_node_id: String = "", dest_node_id: String = "", precomputed_route: Array = []) -> Drone:
 	"""
@@ -29,7 +38,7 @@ func create_test_drone(id: String, start: Vector3, end: Vector3, model: String, 
 	"""
 	# Check if drone with this ID already exists - prevents multiple instances with same ID
 	if drones.has(id):
-		push_warning("Attempting to create duplicate drone with ID %s. Cleaning up existing drone first." % id)
+		_log_warning("duplicate_drone_id_replaced", {"drone_id": id})
 		
 		# Properly remove the existing drone to prevent multiple instances
 		var existing_drone = drones[id]  # Drone object to remove (Drone)
