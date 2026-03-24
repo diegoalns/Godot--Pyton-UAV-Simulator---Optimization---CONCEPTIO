@@ -626,6 +626,7 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 - Represents one chromosome as a full binary orientation vector across all groups
 - Evaluates chromosomes with common random numbers per generation (shared seed set)
 - Computes fitness as `sum(collisions) + no_path_count + timeout_count` across replications
+- Uses normalized selection score (`fitness / replications`) for generation-best choice, elitism ordering, tournament parent selection, and early-stop improvement checks so mixed `k=2` and `k=6` evaluations remain comparable after generation 40
 - Tracks route-failure components per chromosome evaluation:
   - `no_path_count` (Python planner no-path)
   - `timeout_count` (Python planner timeout)
@@ -651,8 +652,14 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 
 **TensorBoard Metrics (per generation)**:
 - `fitness/best`
+- `fitness/best_selection`
+- `fitness/best_raw`
 - `fitness/mean`
+- `fitness/mean_selection`
+- `fitness/mean_raw`
 - `fitness/std`
+- `fitness/std_selection`
+- `fitness/std_raw`
 - `invalid/best_individual_invalid_count`
 - `invalid/num_invalid_individuals`
 - `route/mean_no_path_python`
@@ -686,6 +693,7 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 **Output Artifacts (run folder)**:
 - `generation_metrics.csv`
   - Includes `best_seed_fitness_scores` and `best_replication_fitness_std` columns
+  - Includes both raw and normalized fitness columns (`fitness_*_raw`, `fitness_*_selection`) so post-gen-40 mixed-k behavior is auditable
 - `best_solution.json`
 - `final_validation_summary.json`
 - `sensitivity_analysis.csv`

@@ -1206,7 +1206,8 @@ def main() -> None:
     )
     cache: Dict[Tuple[str, str], EvalResult] = {}
 
-    best_global_fitness = float("inf")
+    best_global_selection_score = float("inf")
+    best_global_fitness_raw = float("inf")
     best_global_chromosome: Optional[np.ndarray] = None
     best_global_eval: Optional[EvalResult] = None
     best_candidate_archive: Dict[str, float] = {}
@@ -1252,6 +1253,8 @@ def main() -> None:
                 evals[idx] = refined_batch[local_i]
 
         fitness_values = np.array([x.fitness for x in evals], dtype=float)
+        replications = np.array([max(1, int(x.replications)) for x in evals], dtype=float)
+        selection_scores = fitness_values / replications
         invalid_counts = np.array([x.invalid_count for x in evals], dtype=int)
         invalid_flags = np.array([1 if x.is_invalid else 0 for x in evals], dtype=int)
         mean_no_path = float(np.mean([x.no_path_count for x in evals]))
@@ -1260,11 +1263,14 @@ def main() -> None:
         mean_no_response = float(np.mean([x.no_response_count for x in evals]))
         mean_no_valid_route = float(np.mean([x.no_valid_route_count for x in evals]))
 
-        gen_best_idx = int(np.argmin(fitness_values))
-        gen_best_fit = float(fitness_values[gen_best_idx])
+        gen_best_idx = int(np.argmin(selection_scores))
+        gen_best_selection = float(selection_scores[gen_best_idx])
+        gen_best_fit_raw = float(fitness_values[gen_best_idx])
         gen_best_eval = evals[gen_best_idx]
-        gen_mean_fit = float(np.mean(fitness_values))
-        gen_std_fit = float(np.std(fitness_values))
+        gen_mean_selection = float(np.mean(selection_scores))
+        gen_std_selection = float(np.std(selection_scores))
+        gen_mean_fit_raw = float(np.mean(fitness_values))
+        gen_std_fit_raw = float(np.std(fitness_values))
         num_invalid = int(np.sum(invalid_flags))
         best_invalid_count = int(gen_best_eval.invalid_count)
         best_replication_fitness_std = float(gen_best_eval.replication_fitness_std)
@@ -1277,11 +1283,12 @@ def main() -> None:
 
         best_bitstring = bitstring_from_array(population[gen_best_idx])
         best_candidate_archive[best_bitstring] = min(
-            gen_best_fit, best_candidate_archive.get(best_bitstring, float("inf"))
+            gen_best_selection, best_candidate_archive.get(best_bitstring, float("inf"))
         )
 
-        if gen_best_fit < best_global_fitness:
-            best_global_fitness = gen_best_fit
+        if gen_best_selection < best_global_selection_score:
+            best_global_selection_score = gen_best_selection
+            best_global_fitness_raw = gen_best_fit_raw
             best_global_chromosome = population[gen_best_idx].copy()
             best_global_eval = evals[gen_best_idx]
             no_improve_counter = 0
@@ -1291,9 +1298,15 @@ def main() -> None:
         gen_seconds = float(time.time() - gen_start)
         row = {
             "generation": gen,
-            "fitness_best": gen_best_fit,
-            "fitness_mean": gen_mean_fit,
-            "fitness_std": gen_std_fit,
+            "fitness_best": gen_best_fit_raw,
+            "fitness_best_selection": gen_best_selection,
+            "fitness_best_raw": gen_best_fit_raw,
+            "fitness_mean": gen_mean_fit_raw,
+            "fitness_std": gen_std_fit_raw,
+            "fitness_mean_selection": gen_mean_selection,
+            "fitness_std_selection": gen_std_selection,
+            "fitness_mean_raw": gen_mean_fit_raw,
+            "fitness_std_raw": gen_std_fit_raw,
             "invalid_best_individual_invalid_count": best_invalid_count,
             "invalid_num_invalid_individuals": num_invalid,
             "route_mean_no_path_python": mean_no_path,
@@ -1312,9 +1325,15 @@ def main() -> None:
         }
         generation_rows.append(row)
 
-        writer.add_scalar("fitness/best", gen_best_fit, gen)
-        writer.add_scalar("fitness/mean", gen_mean_fit, gen)
-        writer.add_scalar("fitness/std", gen_std_fit, gen)
+        writer.add_scalar("fitness/best", gen_best_fit_raw, gen)
+        writer.add_scalar("fitness/best_selection", gen_best_selection, gen)
+        writer.add_scalar("fitness/best_raw", gen_best_fit_raw, gen)
+        writer.add_scalar("fitness/mean", gen_mean_fit_raw, gen)
+        writer.add_scalar("fitness/mean_selection", gen_mean_selection, gen)
+        writer.add_scalar("fitness/mean_raw", gen_mean_fit_raw, gen)
+        writer.add_scalar("fitness/std", gen_std_fit_raw, gen)
+        writer.add_scalar("fitness/std_selection", gen_std_selection, gen)
+        writer.add_scalar("fitness/std_raw", gen_std_fit_raw, gen)
         writer.add_scalar("invalid/best_individual_invalid_count", best_invalid_count, gen)
         writer.add_scalar("invalid/num_invalid_individuals", num_invalid, gen)
         writer.add_scalar("route/mean_no_path_python", mean_no_path, gen)
@@ -1330,8 +1349,9 @@ def main() -> None:
         should_print_gen_line = bool(mode_settings["print_every_generation"]) or gen == 1 or gen % 10 == 0
         if should_print_gen_line:
             print(
-                f"[Gen {gen:03d}] best={gen_best_fit:.4f} mean={gen_mean_fit:.4f} "
-                f"std={gen_std_fit:.4f} invalid={num_invalid}/{args.population} "
+                f"[Gen {gen:03d}] best_sel={gen_best_selection:.4f} best_raw={gen_best_fit_raw:.4f} "
+                f"mean_sel={gen_mean_selection:.4f} std_sel={gen_std_selection:.4f} "
+                f"invalid={num_invalid}/{args.population} "
                 f"mean_no_path_py={mean_no_path:.2f} "
                 f"mean_timeout_py={mean_planner_timeout:.2f} "
                 f"mean_error_py={mean_server_error:.2f} "
@@ -1350,7 +1370,7 @@ def main() -> None:
             break
 
         # Selection + reproduction.
-        elite_indices = np.argsort(fitness_values)[: args.elitism]
+        elite_indices = np.argsort(selection_scores)[: args.elitism]
         elites = population[elite_indices].copy()
 
         offspring_target = args.population - args.elitism
@@ -1361,7 +1381,7 @@ def main() -> None:
             offspring: List[np.ndarray] = []
             while len(offspring) < offspring_target:
                 p1_idx, p2_idx = tournament_select_indices(
-                    fitness_values=fitness_values, tournament_size=args.tournament_size, rng=rng
+                    fitness_values=selection_scores, tournament_size=args.tournament_size, rng=rng
                 )
                 c1, c2 = uniform_crossover(
                     parent_a=population[p1_idx],
@@ -1390,7 +1410,7 @@ def main() -> None:
         final_candidates[bs] = population[i].copy()
     final_candidates[bitstring_from_array(best_global_chromosome)] = best_global_chromosome.copy()
 
-    # Rank by best-known archived fitness (fallback inf).
+    # Rank by best-known archived selection score (fallback inf).
     ranked_candidates = sorted(
         final_candidates.items(),
         key=lambda kv: best_candidate_archive.get(kv[0], float("inf")),
@@ -1557,6 +1577,8 @@ def main() -> None:
     print("=" * 88)
     print("GA EXPERIMENT COMPLETE")
     print("=" * 88)
+    print(f"Best GA selection score: {best_global_selection_score:.6f}")
+    print(f"Best GA raw fitness: {best_global_fitness_raw:.6f}")
     print(f"Run directory: {run_dir}")
     print(f"Best fitness: {best_validated['fitness']}")
     print(f"Best chromosome bitstring: {best_validated['bitstring']}")

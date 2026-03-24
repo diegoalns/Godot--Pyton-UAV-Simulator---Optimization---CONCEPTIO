@@ -382,6 +382,9 @@ Recommended rules:
   - Generations 1-40: `k=2`
   - Generations 41-120: base `k=2` + top 20% re-evaluated at `k=6`
   - Final validation: best 5 candidates at `k=20` held-out seeds
+- **Selection metric**:
+  - GA parent selection, elitism, generation-best tracking, and early-stop improvement checks use normalized fitness (`fitness / replications`) so mixed `k=2` and `k=6` evaluations remain comparable after generation 40.
+  - Raw objective sum (`sum(collisions) + no_path_count + timeout_count`) is still logged for analysis and backward compatibility.
 - **Post-processing controls** (for faster integrated smoke checks):
   - `--final-validation-top-k` (default `5`)
   - `--final-validation-seeds` (default `20`)
@@ -416,6 +419,7 @@ Recommended rules:
     - `best_rep_std` (standard deviation of best individual's per-seed fitness scores)
   - `generation_metrics.csv`
     - includes `best_seed_fitness_scores` and `best_replication_fitness_std` per generation
+    - includes both raw and normalized fitness columns (`fitness_*_raw` and `fitness_*_selection`) for mixed-k auditability
   - `best_solution.json`
   - `final_validation_summary.json`
   - `sensitivity_analysis.csv`
