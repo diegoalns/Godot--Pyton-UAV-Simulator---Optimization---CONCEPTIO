@@ -39,6 +39,23 @@ Outputs:
 - Per-replication artifacts in `Experiments/.../tmp/rep_*/`
 - Per-run summaries in each experiment run folder
 
+### Logging and Artifact Modes (Ex1 GA)
+
+`Experiments/Ex1-ShtPath-GA/GA-Experiment1.py` supports mode controls for integrated runs:
+
+- `--log-mode quiet|normal|verbose` (default: `normal`)
+  - `quiet` -> Python `SIM_LOG_LEVEL=ERROR`, `SIM_LOG_FORMAT=json`; Godot `GA_LOG_LEVEL=quiet`
+  - `normal` -> Python `SIM_LOG_LEVEL=INFO`, `SIM_LOG_FORMAT=table`; Godot `GA_LOG_LEVEL=normal`
+  - `verbose` -> Python `SIM_LOG_LEVEL=DEBUG`, `SIM_LOG_FORMAT=json`; Godot `GA_LOG_LEVEL=verbose`
+- `--artifact-mode keep_all|keep_failures|minimal` (default: `keep_all`)
+  - `keep_all`: keep all `tmp/rep_*` artifacts
+  - `keep_failures`: keep only replications with route-failure counters > 0
+  - `minimal`: keep only `python_server.log`, `godot.log`, `collision_log.csv`, `python_routes_received.csv`, `godot_summary.json`
+
+Notes:
+- Godot core log writers currently interpret only `GA_LOG_LEVEL=quiet` specially.
+- Startup and scoring still rely on `python_server.log` and `godot.log`, so those are preserved in all artifact modes.
+
 ## Command and Mock Modes
 
 Command mode:

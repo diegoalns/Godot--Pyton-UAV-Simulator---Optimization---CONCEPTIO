@@ -87,6 +87,37 @@ class NullSummaryWriter:
         return
 
 
+LOG_MODE_CHOICES = ("quiet", "normal", "verbose")
+ARTIFACT_MODE_CHOICES = ("keep_all", "keep_failures", "minimal")
+
+
+def resolve_log_mode_settings(log_mode: str) -> dict:
+    """
+    Map runner log mode to Python/Godot logging environment variables.
+    """
+    mode = (log_mode or "").strip().lower()
+    if mode == "quiet":
+        return {
+            "python_log_level": "ERROR",
+            "python_log_format": "json",
+            "godot_log_level": "quiet",
+            "print_every_generation": False,
+        }
+    if mode == "verbose":
+        return {
+            "python_log_level": "DEBUG",
+            "python_log_format": "json",
+            "godot_log_level": "verbose",
+            "print_every_generation": True,
+        }
+    return {
+        "python_log_level": "INFO",
+        "python_log_format": "table",
+        "godot_log_level": "normal",
+        "print_every_generation": True,
+    }
+
+
 class TeeTextIO:
     """
     Mirror writes to the original stream and a run-scoped log file.
@@ -180,8 +211,12 @@ class SimulationAdapter:
         godot_project_dir: Path,
         integrated_max_sim_time: float,
         server_start_timeout: float,
+        log_mode: str = "normal",
+        artifact_mode: str = "keep_all",
     ) -> None:
         self.mode = mode
+        self.log_mode = (log_mode or "normal").strip().lower()
+        self.artifact_mode = (artifact_mode or "keep_all").strip().lower()
         self.sim_command = sim_command
         self.timeout_seconds = timeout_seconds
         self.working_dir = working_dir
@@ -195,6 +230,44 @@ class SimulationAdapter:
         self.server_start_timeout = server_start_timeout
         self._port_lock = threading.Lock()
         self._reserved_ports: set[int] = set()
+
+    @staticmethod
+    def _apply_rep_artifact_policy(
+        rep_dir: Path,
+        artifact_mode: str,
+        had_route_failures: bool,
+    ) -> None:
+        """
+        Apply retention policy to one replication directory after metrics are parsed.
+        """
+        mode = (artifact_mode or "keep_all").strip().lower()
+        if mode == "keep_all":
+            return
+
+        if mode == "keep_failures":
+            if had_route_failures:
+                return
+            shutil.rmtree(rep_dir, ignore_errors=True)
+            return
+
+        # minimal: keep only audit-relevant files and remove the rest.
+        keep_names = {
+            "python_server.log",
+            "godot.log",
+            "collision_log.csv",
+            "python_routes_received.csv",
+            "godot_summary.json",
+        }
+        for entry in rep_dir.iterdir():
+            if entry.name in keep_names:
+                continue
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                try:
+                    entry.unlink()
+                except FileNotFoundError:
+                    pass
 
     @staticmethod
     def _parse_json_from_text(text: str) -> Optional[dict]:
@@ -291,9 +364,15 @@ class SimulationAdapter:
             pickle.dump({"graph": g_new, "metadata": self.base_metadata}, f)
 
     @staticmethod
-    def _wait_for_server_ready(server_log_path: Path, timeout_s: float) -> None:
+    def _wait_for_server_ready(server_log_path: Path, timeout_s: float, server_host: str, server_port: int) -> None:
         deadline = time.time() + timeout_s
         while time.time() < deadline:
+            # Fast path: if socket is connectable, server is ready even if logs are quiet.
+            try:
+                with socket.create_connection((server_host, int(server_port)), timeout=0.25):
+                    return
+            except OSError:
+                pass
             if server_log_path.exists():
                 text = server_log_path.read_text(encoding="utf-8", errors="ignore")
                 if "server_running" in text:
@@ -325,13 +404,33 @@ class SimulationAdapter:
         return int(no_path_count), int(timeout_count)
 
     @staticmethod
+    def _count_lines_with_any_token(text: str, tokens: Sequence[str]) -> int:
+        """
+        Count log lines containing at least one token.
+        Avoids double-counting when both full and truncated event names are provided.
+        """
+        if not text:
+            return 0
+        lines = text.splitlines()
+        return int(sum(1 for line in lines if any(token in line for token in tokens)))
+
+    @staticmethod
     def _parse_server_error_count(server_log_path: Path) -> int:
         if not server_log_path.exists():
             return 0
         text = server_log_path.read_text(encoding="utf-8", errors="ignore")
         # Server-side validation and processing failures reported by Python server.
-        invalid_nodes = text.count("route_request_rejected_invalid_nodes")
-        pathfinding_errors = text.count("pathfinding_error")
+        # Include truncated variants to remain robust with fixed-width table formatting.
+        invalid_nodes = SimulationAdapter._count_lines_with_any_token(
+            text,
+            (
+                "route_request_rejected_invalid_nodes",
+                "route_request_rejected_invalid_no",
+            ),
+        )
+        pathfinding_errors = SimulationAdapter._count_lines_with_any_token(
+            text, ("pathfinding_error",)
+        )
         return int(invalid_nodes + pathfinding_errors)
 
     @staticmethod
@@ -339,10 +438,18 @@ class SimulationAdapter:
         if not godot_log_path.exists():
             return 0, 0
         text = godot_log_path.read_text(encoding="utf-8", errors="ignore")
-        no_response_count = text.count("pre_request_timeout_no_response") + text.count(
-            "flight_cancelled_route_timeout"
+        no_response_count = SimulationAdapter._count_lines_with_any_token(
+            text, ("pre_request_timeout_no_response",)
+        ) + SimulationAdapter._count_lines_with_any_token(
+            text, ("flight_cancelled_route_timeout",)
         )
-        no_valid_route_count = text.count("route_request_failed_no_valid_route")
+        no_valid_route_count = SimulationAdapter._count_lines_with_any_token(
+            text,
+            (
+                "route_request_failed_no_valid_route",
+                "route_request_failed_no_valid_ro",
+            ),
+        )
         return int(no_response_count), int(no_valid_route_count)
 
     @staticmethod
@@ -390,13 +497,16 @@ class SimulationAdapter:
         ga_summary = rep_dir / "godot_summary.json"
         collision_csv = rep_dir / "collision_log.csv"
         simple_log_csv = rep_dir / "simple_log.csv"
+        python_routes_csv = rep_dir / "python_routes_received.csv"
         ws_host = "127.0.0.1"
         ws_port = self._select_available_ws_port(rep_hash=rep_hash)
 
+        mode_settings = resolve_log_mode_settings(self.log_mode)
         env_server = os.environ.copy()
         env_server["GRAPH_PICKLE_PATH"] = str(oriented_graph_pickle)
-        env_server["SIM_LOG_FORMAT"] = "table"
-        env_server["SIM_LOG_LEVEL"] = "INFO"
+        env_server["SIM_LOG_FORMAT"] = mode_settings["python_log_format"]
+        env_server["SIM_LOG_LEVEL"] = mode_settings["python_log_level"]
+        env_server["SIM_ROUTES_RECEIVED_CSV"] = str(python_routes_csv)
         env_server["WS_SERVER_HOST"] = ws_host
         env_server["WS_SERVER_PORT"] = str(ws_port)
 
@@ -409,6 +519,7 @@ class SimulationAdapter:
         env_godot["GA_WEBSOCKET_URL"] = f"ws://{ws_host}:{ws_port}"
         env_godot["GA_COLLISION_LOG_CSV"] = str(collision_csv)
         env_godot["GA_SIMPLE_LOG_CSV"] = str(simple_log_csv)
+        env_godot["GA_LOG_LEVEL"] = mode_settings["godot_log_level"]
 
         server_proc = None
         godot_proc = None
@@ -434,7 +545,12 @@ class SimulationAdapter:
                     )
 
                 try:
-                    self._wait_for_server_ready(server_log, self.server_start_timeout)
+                    self._wait_for_server_ready(
+                        server_log,
+                        self.server_start_timeout,
+                        server_host=ws_host,
+                        server_port=ws_port,
+                    )
                     startup_last_error = None
                     break
                 except Exception as e:
@@ -489,6 +605,18 @@ class SimulationAdapter:
         no_path_count, timeout_count = self._parse_pathfinder_status_counts(server_log)
         server_error_count = self._parse_server_error_count(server_log)
         no_response_count, no_valid_route_count = self._parse_godot_response_failure_counts(godot_log)
+        had_route_failures = (
+            no_path_count > 0
+            or timeout_count > 0
+            or server_error_count > 0
+            or no_response_count > 0
+            or no_valid_route_count > 0
+        )
+        self._apply_rep_artifact_policy(
+            rep_dir=rep_dir,
+            artifact_mode=self.artifact_mode,
+            had_route_failures=had_route_failures,
+        )
         return {
             "collisions": collisions,
             "no_path_count": no_path_count,
@@ -502,6 +630,7 @@ class SimulationAdapter:
                 "godot_log": str(godot_log),
                 "ga_summary_json": str(ga_summary),
                 "collision_csv": str(collision_csv),
+                "python_routes_received_csv": str(python_routes_csv),
                 "websocket_port": ws_port,
             },
         }
@@ -909,6 +1038,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--invalid-penalty", type=float, default=10000.0)
     parser.add_argument("--workers", type=int, default=18)
     parser.add_argument("--seed", type=int, default=160)
+    parser.add_argument("--log-mode", type=str, default="normal", choices=list(LOG_MODE_CHOICES))
+    parser.add_argument(
+        "--artifact-mode",
+        type=str,
+        default="keep_all",
+        choices=list(ARTIFACT_MODE_CHOICES),
+        help=(
+            "Replication artifact retention policy in integrated mode: "
+            "keep_all, keep_failures, or minimal."
+        ),
+    )
     parser.add_argument("--eval-mode", type=str, default="integrated", choices=["integrated", "command", "mock"])
     parser.add_argument(
         "--sim-command",
@@ -950,6 +1090,10 @@ def main() -> None:
         raise ValueError("--elitism must be <= --population.")
     if args.workers < 1:
         raise ValueError("--workers must be >= 1.")
+    if args.log_mode not in LOG_MODE_CHOICES:
+        raise ValueError("--log-mode must be one of: quiet, normal, verbose.")
+    if args.artifact_mode not in ARTIFACT_MODE_CHOICES:
+        raise ValueError("--artifact-mode must be one of: keep_all, keep_failures, minimal.")
 
     if args.eval_mode == "command" and not args.sim_command.strip():
         raise ValueError("When --eval-mode=command, --sim-command is required.")
@@ -1046,6 +1190,8 @@ def main() -> None:
 
     adapter = SimulationAdapter(
         mode=args.eval_mode,
+        log_mode=args.log_mode,
+        artifact_mode=args.artifact_mode,
         sim_command=args.sim_command.strip() or None,
         timeout_seconds=float(args.sim_timeout_seconds),
         working_dir=Path(__file__).resolve().parents[2],  # repository root
@@ -1180,18 +1326,21 @@ def main() -> None:
         writer.add_scalar("time/generation_seconds", gen_seconds, gen)
         writer.flush()
 
-        print(
-            f"[Gen {gen:03d}] best={gen_best_fit:.4f} mean={gen_mean_fit:.4f} "
-            f"std={gen_std_fit:.4f} invalid={num_invalid}/{args.population} "
-            f"mean_no_path_py={mean_no_path:.2f} "
-            f"mean_timeout_py={mean_planner_timeout:.2f} "
-            f"mean_error_py={mean_server_error:.2f} "
-            f"mean_no_resp_gd={mean_no_response:.2f} "
-            f"mean_no_valid_gd={mean_no_valid_route:.2f} "
-            f"best_seed_scores=[{best_seed_scores_str}] "
-            f"best_rep_std={best_replication_fitness_std:.4f} "
-            f"diversity={diversity:.4f} t={gen_seconds:.2f}s"
-        )
+        mode_settings = resolve_log_mode_settings(args.log_mode)
+        should_print_gen_line = bool(mode_settings["print_every_generation"]) or gen == 1 or gen % 10 == 0
+        if should_print_gen_line:
+            print(
+                f"[Gen {gen:03d}] best={gen_best_fit:.4f} mean={gen_mean_fit:.4f} "
+                f"std={gen_std_fit:.4f} invalid={num_invalid}/{args.population} "
+                f"mean_no_path_py={mean_no_path:.2f} "
+                f"mean_timeout_py={mean_planner_timeout:.2f} "
+                f"mean_error_py={mean_server_error:.2f} "
+                f"mean_no_resp_gd={mean_no_response:.2f} "
+                f"mean_no_valid_gd={mean_no_valid_route:.2f} "
+                f"best_seed_scores=[{best_seed_scores_str}] "
+                f"best_rep_std={best_replication_fitness_std:.4f} "
+                f"diversity={diversity:.4f} t={gen_seconds:.2f}s"
+            )
 
         if no_improve_counter >= args.early_stop_patience:
             print(
@@ -1394,6 +1543,8 @@ def main() -> None:
                 "num_variables": num_variables,
                 "run_id": run_id,
                 "base_seed": args.seed,
+                "log_mode": args.log_mode,
+                "artifact_mode": args.artifact_mode,
             },
             f,
             indent=2,

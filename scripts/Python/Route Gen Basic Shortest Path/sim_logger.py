@@ -103,13 +103,30 @@ _ROUTES_RECEIVED_HEADER = [
 ]
 
 
+def _get_routes_received_csv_path() -> Path:
+    """
+    Return destination CSV path for Python route timing rows.
+
+    Environment override:
+    - SIM_ROUTES_RECEIVED_CSV: absolute or cwd-relative file path
+    """
+    override = os.getenv("SIM_ROUTES_RECEIVED_CSV", "").strip()
+    if override:
+        override_path = Path(override).expanduser()
+        if not override_path.is_absolute():
+            override_path = (Path.cwd() / override_path).resolve()
+        return override_path
+    return _ROUTES_RECEIVED_CSV
+
+
 def reset_route_received_csv() -> None:
     """
     Clear python_routes_received.csv at server startup for run-local logs.
     Header is written lazily on first appended row.
     """
-    _LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    _ROUTES_RECEIVED_CSV.write_text("", encoding="utf-8")
+    csv_path = _get_routes_received_csv_path()
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    csv_path.write_text("", encoding="utf-8")
 
 
 def _maybe_print_header() -> None:
@@ -124,7 +141,7 @@ def _append_csv_row(path: Path, header: list[str], row: list[Any]) -> None:
     """
     Append one row to a CSV file and create header on first write.
     """
-    _LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     file_exists = path.exists()
     with path.open("a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -165,7 +182,7 @@ def log_route_received_csv(
             cumulative_duration = overfly_times[idx] - start_time_sim
 
         _append_csv_row(
-            _ROUTES_RECEIVED_CSV,
+            _get_routes_received_csv_path(),
             _ROUTES_RECEIVED_HEADER,
             [
                 plan_id,
@@ -227,10 +244,10 @@ def log_event(
     elif log_fmt == "pretty":
         details = " ".join("%s=%s" % (k, payload[k]) for k in sorted(fields.keys()))
         print(
-            "[%s][%s][%s] %s%s" % [
+            "[%s][%s][%s] %s%s" % (
                 level, category, "python", event,
                 (" | " + details) if details else "",
-            ],
+            ),
             flush=True,
         )
     else:
