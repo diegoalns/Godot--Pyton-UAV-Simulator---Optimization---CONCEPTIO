@@ -53,16 +53,22 @@ Terminal line interpretation (per generation)
 - Number of printed seed entries:
   - 2 entries when best individual has 2-seed evaluation
   - 6 entries when best individual has 6-seed evaluation
+- Post-phase terminal progress lines:
+  - Final validation prints `[FinalVal]` start/progress/end with per-candidate timing and fitness
+  - Sensitivity prints `[Sensitivity]` start/progress/end with periodic updates (every 10 bits) and ETA-like remaining estimate
+  - If sensitivity is disabled, prints explicit skipped message
 
 Final-stage validation and sensitivity
 - Candidate set: final population + global-best archive candidate.
-- Ranking for shortlist: archived best-known fitness.
+- Ranking for shortlist: archived best-known normalized selection score.
 - Final validation:
-  - top 5 candidates
-  - held-out seed set K=20
+  - top `--final-validation-top-k` candidates (default 5)
+  - held-out seed set K=`--final-validation-seeds` (default 20)
 - Sensitivity:
+  - enabled by default; disable with `--no-run-sensitivity`
   - one-bit flip sweep over best validated chromosome
   - evaluates delta fitness per bit on held-out seeds
+  - bit sweep cap via `--sensitivity-max-bits` (0 means all bits)
 
 Cache and parallel evaluation behavior
 - Cache key:
@@ -95,19 +101,26 @@ Command-line parameters (defaults)
 - --tensorboard-host: 127.0.0.1
 - --auto-launch-tensorboard / --no-auto-launch-tensorboard: default true
 - --auto-open-tensorboard-browser / --no-auto-open-tensorboard-browser: default true
+- --final-validation-top-k: 5
+- --final-validation-seeds: 20
+- --run-sensitivity / --no-run-sensitivity: default true
+- --sensitivity-max-bits: 0
 - --run-root: ./Experiments/Ex1-ShtPath-GA/ga_runs
 
 Runtime guards
 - population >= 2
 - 0 <= elitism <= population
 - workers >= 1
+- final-validation-top-k >= 1
+- final-validation-seeds >= 1
+- sensitivity-max-bits >= 0
 - For eval-mode=command, sim-command must be provided.
 
 Run artifacts written by GA-Experiment1.py
 - generation_metrics.csv
 - best_solution.json
 - final_validation_summary.json
-- sensitivity_analysis.csv
+- sensitivity_analysis.csv (written only when sensitivity is enabled)
 - run_config.json
 - tensorboard/ (event files)
 - terminal_output.txt

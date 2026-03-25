@@ -381,7 +381,7 @@ Recommended rules:
 - **Replication schedule**:
   - Generations 1-40: `k=2`
   - Generations 41-120: base `k=2` + top 20% re-evaluated at `k=6`
-  - Final validation: best 5 candidates at `k=20` held-out seeds
+  - Final validation: top `--final-validation-top-k` candidates at held-out `k=--final-validation-seeds`
 - **Selection metric**:
   - GA parent selection, elitism, generation-best tracking, and early-stop improvement checks use normalized fitness (`fitness / replications`) so mixed `k=2` and `k=6` evaluations remain comparable after generation 40.
   - Raw objective sum (`sum(collisions) + no_path_count + timeout_count`) is still logged for analysis and backward compatibility.
@@ -396,6 +396,9 @@ Recommended rules:
   - `population >= 2`
   - `0 <= elitism <= population`
   - `workers >= 1`
+  - `final-validation-top-k >= 1`
+  - `final-validation-seeds >= 1`
+  - `sensitivity-max-bits >= 0`
   - Reproduction step now safely handles `population == elitism` (fully elitist carry-over), preventing tiny-run crashes
   - Default `population` is set to `120` (override with `--population` as needed)
   - Default `workers` is set to `18` for parallel batch evaluation (override with `--workers`)
@@ -417,12 +420,15 @@ Recommended rules:
     - `mean_no_valid_gd` (Godot-side response missing valid route payload)
     - `best_seed_scores` (best individual's per-seed fitness as `seed:score`)
     - `best_rep_std` (standard deviation of best individual's per-seed fitness scores)
+  - Terminal output now includes post-phase progress lines so long final steps are observable:
+    - `[FinalVal ...]` start/progress/end for held-out candidate validation
+    - `[Sensitivity ...]` start/progress/end (periodic progress every 10 bits, plus skip message when disabled)
   - `generation_metrics.csv`
     - includes `best_seed_fitness_scores` and `best_replication_fitness_std` per generation
     - includes both raw and normalized fitness columns (`fitness_*_raw` and `fitness_*_selection`) for mixed-k auditability
   - `best_solution.json`
   - `final_validation_summary.json`
-  - `sensitivity_analysis.csv`
+  - `sensitivity_analysis.csv` (only when sensitivity is enabled)
   - `terminal_output.txt` (mirrored GA terminal stdout/stderr)
 - **Integrated run mode (default)**:
   - Builds an oriented graph per chromosome/seed replication

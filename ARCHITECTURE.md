@@ -639,11 +639,12 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 - Evaluates chromosome batches in parallel with a thread pool (`--workers`, default `18`) and cache-aware de-duplication
 - Executes GA operators: tournament selection, uniform crossover, bit-flip mutation, elitism, generational replacement
 - Enforces GA runtime guards for stability in small diagnostics (`population >= 2`, `0 <= elitism <= population`, `workers >= 1`)
+- Enforces post-phase guardrails (`final_validation_top_k >= 1`, `final_validation_seeds >= 1`, `sensitivity_max_bits >= 0`)
 - Supports a safe fully-elitist generation step when `population == elitism` (no offspring phase)
 - GA default configuration now uses `population=120` (CLI override still supported)
 - Ex2 variant at `Experiments/Ex2-ShtPath-GA 16 Workers/GA-Experiment1.py` defaults to `workers=16`
 - Supports early stopping when no best-fitness improvement occurs for a fixed patience window
-- Performs final held-out validation for top candidates and one-bit sensitivity analysis from the best chromosome
+- Performs configurable final held-out validation (`--final-validation-top-k`, `--final-validation-seeds`) and optional one-bit sensitivity analysis (`--run-sensitivity`, `--sensitivity-max-bits`) from the best chromosome
 - Exposes post-phase scaling controls for integrated testing and diagnostics:
   - `--final-validation-top-k`
   - `--final-validation-seeds`
@@ -672,6 +673,9 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 - Terminal generation output additionally reports best-individual replication diagnostics:
   - `best_seed_scores`: per-seed best-individual fitness as `seed:score` pairs
   - `best_rep_std`: std-dev across those per-seed best-individual fitness values
+- Terminal post-phase output now reports progress for long-running steps:
+  - `[FinalVal ...]` start/progress/end lines during held-out top-k validation
+  - `[Sensitivity ...]` start/progress/end lines during one-bit sweep, periodic every 10 bits, or explicit skipped line when `--no-run-sensitivity` is used
 - Runtime dashboard behavior:
   - TensorBoard can be auto-launched by `GA-Experiment1.py` at run start
   - Default TensorBoard port is `6007` (configurable via `--tensorboard-port`)
@@ -696,7 +700,7 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
   - Includes both raw and normalized fitness columns (`fitness_*_raw`, `fitness_*_selection`) so post-gen-40 mixed-k behavior is auditable
 - `best_solution.json`
 - `final_validation_summary.json`
-- `sensitivity_analysis.csv`
+- `sensitivity_analysis.csv` (generated only when sensitivity is enabled)
 - `tensorboard/` event files
 - `terminal_output.txt` (mirrored GA terminal stdout/stderr for that run)
 

@@ -1074,6 +1074,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tensorboard-host", type=str, default="127.0.0.1")
     parser.add_argument("--auto-launch-tensorboard", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--auto-open-tensorboard-browser", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--final-validation-top-k", type=int, default=5)
+    parser.add_argument("--final-validation-seeds", type=int, default=20)
+    parser.add_argument("--run-sensitivity", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--sensitivity-max-bits",
+        type=int,
+        default=0,
+        help="Maximum bit count for sensitivity sweep (0 = all bits).",
+    )
     parser.add_argument("--run-root", type=str, default="./Experiments/Ex1-ShtPath-GA/ga_runs")
     return parser.parse_args()
 
@@ -1094,6 +1103,12 @@ def main() -> None:
         raise ValueError("--log-mode must be one of: quiet, normal, verbose.")
     if args.artifact_mode not in ARTIFACT_MODE_CHOICES:
         raise ValueError("--artifact-mode must be one of: keep_all, keep_failures, minimal.")
+    if args.final_validation_top_k < 1:
+        raise ValueError("--final-validation-top-k must be >= 1.")
+    if args.final_validation_seeds < 1:
+        raise ValueError("--final-validation-seeds must be >= 1.")
+    if args.sensitivity_max_bits < 0:
+        raise ValueError("--sensitivity-max-bits must be >= 0.")
 
     if args.eval_mode == "command" and not args.sim_command.strip():
         raise ValueError("When --eval-mode=command, --sim-command is required.")
@@ -1399,7 +1414,7 @@ def main() -> None:
             population = np.vstack((elites, offspring_array))
             population = population[: args.population]
 
-    # 4) Final validation on held-out seeds for best 5.
+    # 4) Final validation on held-out seeds for configurable top-K.
     if best_global_chromosome is None:
         raise RuntimeError("GA finished without a best solution.")
 
@@ -1415,12 +1430,22 @@ def main() -> None:
         final_candidates.items(),
         key=lambda kv: best_candidate_archive.get(kv[0], float("inf")),
     )
-    top5 = ranked_candidates[:5]
+    top_k = min(len(ranked_candidates), int(args.final_validation_top_k))
+    top_candidates = ranked_candidates[:top_k]
 
-    heldout_seeds = build_generation_seed_list(base_seed=args.seed + 99991, generation=999, max_k=20)
+    heldout_seeds = build_generation_seed_list(
+        base_seed=args.seed + 99991,
+        generation=999,
+        max_k=int(args.final_validation_seeds),
+    )
     heldout_sig = seed_signature(heldout_seeds)
+    print(
+        f"[FinalVal] start top_k={top_k}/{len(ranked_candidates)} heldout_seeds={len(heldout_seeds)}"
+    )
+    final_val_start = time.time()
     final_validation = []
-    for bitstring, chrom in top5:
+    for cand_i, (bitstring, chrom) in enumerate(top_candidates, start=1):
+        cand_start = time.time()
         res = evaluate_chromosome(
             chromosome=chrom,
             seeds=heldout_seeds,
@@ -1447,28 +1472,25 @@ def main() -> None:
                 "seed_signature": heldout_sig,
             }
         )
+        cand_elapsed = float(time.time() - cand_start)
+        print(
+            f"[FinalVal {cand_i:03d}/{top_k:03d}] fit={res.fitness:.4f} "
+            f"invalid={res.invalid_count} bits={bitstring[:16]}... t={cand_elapsed:.2f}s"
+        )
     final_validation.sort(key=lambda x: float(x["fitness"]))
     best_validated = final_validation[0]
     best_validated_bits = np.array([int(ch) for ch in best_validated["bitstring"]], dtype=np.int8)
-
-    # 5) One-bit sensitivity analysis from best validated chromosome on held-out seeds.
-    best_val_result = evaluate_chromosome(
-        chromosome=best_validated_bits,
-        seeds=heldout_seeds,
-        adapter=adapter,
-        invalid_threshold=args.invalid_threshold,
-        invalid_penalty=args.invalid_penalty,
-        variable_to_group_list=variable_to_group_list,
-        cache=cache,
-        run_tmp_dir=run_tmp_dir,
+    print(
+        f"[FinalVal] done best_fit={float(best_validated['fitness']):.4f} "
+        f"elapsed={float(time.time() - final_val_start):.2f}s"
     )
-    base_fit = best_val_result.fitness
+
     sensitivity_rows = []
-    for bit_idx in range(num_variables):
-        flipped = best_validated_bits.copy()
-        flipped[bit_idx] = 1 - flipped[bit_idx]
-        flipped_res = evaluate_chromosome(
-            chromosome=flipped,
+    sensitivity_bit_count_used = 0
+    # 5) One-bit sensitivity analysis from best validated chromosome on held-out seeds.
+    if args.run_sensitivity:
+        best_val_result = evaluate_chromosome(
+            chromosome=best_validated_bits,
             seeds=heldout_seeds,
             adapter=adapter,
             invalid_threshold=args.invalid_threshold,
@@ -1477,20 +1499,69 @@ def main() -> None:
             cache=cache,
             run_tmp_dir=run_tmp_dir,
         )
-        delta = float(flipped_res.fitness - base_fit)
-        sensitivity_rows.append(
-            {
-                "bit_index": bit_idx,
-                "base_bit": int(best_validated_bits[bit_idx]),
-                "flipped_bit": int(flipped[bit_idx]),
-                "base_fitness": base_fit,
-                "flipped_fitness": float(flipped_res.fitness),
-                "delta_fitness": delta,
-                "abs_delta_fitness": abs(delta),
-                "is_invalid_after_flip": bool(flipped_res.is_invalid),
-            }
+        base_fit = best_val_result.fitness
+        if args.sensitivity_max_bits == 0:
+            bit_count = num_variables
+        else:
+            bit_count = min(num_variables, int(args.sensitivity_max_bits))
+        sensitivity_bit_count_used = int(bit_count)
+        print(
+            f"[Sensitivity] start bits={sensitivity_bit_count_used}/{num_variables} "
+            f"heldout_seeds={len(heldout_seeds)}"
         )
-    sensitivity_rows.sort(key=lambda x: float(x["abs_delta_fitness"]), reverse=True)
+        sensitivity_start = time.time()
+        progress_every = 10
+        max_abs_delta = 0.0
+        last_delta = 0.0
+        for bit_idx in range(bit_count):
+            flipped = best_validated_bits.copy()
+            flipped[bit_idx] = 1 - flipped[bit_idx]
+            flipped_res = evaluate_chromosome(
+                chromosome=flipped,
+                seeds=heldout_seeds,
+                adapter=adapter,
+                invalid_threshold=args.invalid_threshold,
+                invalid_penalty=args.invalid_penalty,
+                variable_to_group_list=variable_to_group_list,
+                cache=cache,
+                run_tmp_dir=run_tmp_dir,
+            )
+            delta = float(flipped_res.fitness - base_fit)
+            sensitivity_rows.append(
+                {
+                    "bit_index": bit_idx,
+                    "base_bit": int(best_validated_bits[bit_idx]),
+                    "flipped_bit": int(flipped[bit_idx]),
+                    "base_fitness": base_fit,
+                    "flipped_fitness": float(flipped_res.fitness),
+                    "delta_fitness": delta,
+                    "abs_delta_fitness": abs(delta),
+                    "is_invalid_after_flip": bool(flipped_res.is_invalid),
+                }
+            )
+            max_abs_delta = max(max_abs_delta, abs(delta))
+            last_delta = delta
+            processed = bit_idx + 1
+            if processed % progress_every == 0 or processed == bit_count:
+                elapsed = float(time.time() - sensitivity_start)
+                if processed > 0:
+                    eta = float((elapsed / processed) * (bit_count - processed))
+                else:
+                    eta = 0.0
+                print(
+                    f"[Sensitivity {processed:03d}/{bit_count:03d}] "
+                    f"last_delta={last_delta:.4f} max_abs_delta={max_abs_delta:.4f} "
+                    f"elapsed={elapsed:.2f}s eta={eta:.2f}s"
+                )
+        sensitivity_rows.sort(key=lambda x: float(x["abs_delta_fitness"]), reverse=True)
+        top_bit = int(sensitivity_rows[0]["bit_index"]) if sensitivity_rows else -1
+        top_abs_delta = float(sensitivity_rows[0]["abs_delta_fitness"]) if sensitivity_rows else 0.0
+        print(
+            f"[Sensitivity] done top_bit={top_bit} top_abs_delta={top_abs_delta:.4f} "
+            f"elapsed={float(time.time() - sensitivity_start):.2f}s"
+        )
+    else:
+        print("[Sensitivity] skipped (--no-run-sensitivity).")
 
     # 6) Persist outputs.
     generation_csv = run_dir / "generation_metrics.csv"
@@ -1520,17 +1591,22 @@ def main() -> None:
         json.dump(
             {
                 "heldout_seed_signature": heldout_sig,
+                "top_k_requested": int(args.final_validation_top_k),
+                "top_k_used": int(top_k),
+                "heldout_seeds_count": int(len(heldout_seeds)),
                 "top5_results": final_validation,
+                "top_results": final_validation,
             },
             f,
             indent=2,
         )
 
     sensitivity_csv = run_dir / "sensitivity_analysis.csv"
-    with sensitivity_csv.open("w", newline="", encoding="utf-8") as f:
-        writer_csv = csv.DictWriter(f, fieldnames=list(sensitivity_rows[0].keys()))
-        writer_csv.writeheader()
-        writer_csv.writerows(sensitivity_rows)
+    if args.run_sensitivity and sensitivity_rows:
+        with sensitivity_csv.open("w", newline="", encoding="utf-8") as f:
+            writer_csv = csv.DictWriter(f, fieldnames=list(sensitivity_rows[0].keys()))
+            writer_csv.writeheader()
+            writer_csv.writerows(sensitivity_rows)
 
     config_path = run_dir / "run_config.json"
     with config_path.open("w", encoding="utf-8") as f:
@@ -1559,6 +1635,11 @@ def main() -> None:
                 "tensorboard_host": args.tensorboard_host,
                 "auto_launch_tensorboard": args.auto_launch_tensorboard,
                 "auto_open_tensorboard_browser": args.auto_open_tensorboard_browser,
+                "final_validation_top_k": args.final_validation_top_k,
+                "final_validation_seeds": args.final_validation_seeds,
+                "run_sensitivity": args.run_sensitivity,
+                "sensitivity_max_bits": args.sensitivity_max_bits,
+                "sensitivity_bit_count_used": sensitivity_bit_count_used,
                 "pickle_file": args.pickle_file,
                 "num_variables": num_variables,
                 "run_id": run_id,
@@ -1584,7 +1665,12 @@ def main() -> None:
     print(f"Best chromosome bitstring: {best_validated['bitstring']}")
     print(f"Generation metrics CSV: {generation_csv}")
     print(f"Final validation summary: {final_validation_path}")
-    print(f"Sensitivity CSV: {sensitivity_csv}")
+    if args.run_sensitivity and sensitivity_rows:
+        print(f"Sensitivity CSV: {sensitivity_csv}")
+    elif args.run_sensitivity:
+        print("Sensitivity CSV: not generated (no sensitivity rows were produced).")
+    else:
+        print("Sensitivity CSV: skipped (--no-run-sensitivity).")
     print(f"TensorBoard logdir: {tb_dir}")
     print(f"TensorBoard launch command: tensorboard --logdir \"{tb_dir}\"")
     print(f"TensorBoard URL: {tb_url}")
