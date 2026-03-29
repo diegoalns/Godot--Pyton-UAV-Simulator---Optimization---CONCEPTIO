@@ -1588,15 +1588,17 @@ def main() -> None:
 
     final_validation_path = run_dir / "final_validation_summary.json"
     with final_validation_path.open("w", encoding="utf-8") as f:
+        summary = {
+            "heldout_seed_signature": heldout_sig,
+            "top_k_requested": int(args.final_validation_top_k),
+            "top_k_used": int(top_k),
+            "heldout_seeds_count": int(len(heldout_seeds)),
+            "top_results": final_validation,
+        }
+        if int(top_k) == 5:
+            summary["top5_results"] = final_validation
         json.dump(
-            {
-                "heldout_seed_signature": heldout_sig,
-                "top_k_requested": int(args.final_validation_top_k),
-                "top_k_used": int(top_k),
-                "heldout_seeds_count": int(len(heldout_seeds)),
-                "top5_results": final_validation,
-                "top_results": final_validation,
-            },
+            summary,
             f,
             indent=2,
         )
