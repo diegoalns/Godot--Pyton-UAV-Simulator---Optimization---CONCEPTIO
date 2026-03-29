@@ -301,7 +301,8 @@ Nodes use format: `L{level}_X{x}_Y{y}` (e.g., `L0_X0_Y0`)
 
 ### Python Route/Time CSV Logging
 - **Received Routes**: `logs/python_routes_received.csv` - One row per waypoint per planned drone route from Python (includes overfly timing)
-- **Startup behavior**: `python_routes_received.csv` is cleared when the Python WebSocket server starts, then rows are appended during that run
+- **Startup behavior**: target CSV is cleared when the Python WebSocket server starts, then rows are appended during that run
+- **Integrated GA behavior**: each replication writes to its own `tmp/rep_*/python_routes_received.csv` via `SIM_ROUTES_RECEIVED_CSV`, avoiding cross-replication overwrite
 - **Notebook waypoint labels**: `logs/uav_route_visualization.ipynb` can annotate each plotted waypoint with `overfly_time_sim_s` from `python_routes_received.csv` (3D and 2D plots)
 - **Overlap handling in notebook**: waypoint time labels use seeded random positional jitter (plus a light bbox in 2D) to keep labels readable when drones share the same route/waypoints; current jitter defaults are `label_jitter_xy=0.15`, `label_jitter_z=0.06`, `label_jitter_2d=0.15`
 - **Route-color labels in notebook**: each waypoint time label uses the same color as its corresponding plotted route line for easier route association
@@ -338,6 +339,7 @@ ts            level    category       source event                           dat
 Python logger runtime controls:
 - `SIM_LOG_LEVEL`: `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `INFO`)
 - `SIM_LOG_FORMAT`: `table` (default), `json`, or `pretty`
+- `SIM_ROUTES_RECEIVED_CSV`: optional output path override for per-waypoint route CSV
 
 Examples:
 - `SIM_LOG_FORMAT=table` for aligned fixed-width output (default)
@@ -379,7 +381,10 @@ Recommended rules:
 - **Replication schedule**:
   - Generations 1-40: `k=2`
   - Generations 41-120: base `k=2` + top 20% re-evaluated at `k=6`
-  - Final validation: best 5 candidates at `k=20` held-out seeds
+  - Final validation: top `--final-validation-top-k` candidates at held-out `k=--final-validation-seeds`
+- **Selection metric**:
+  - GA parent selection, elitism, generation-best tracking, and early-stop improvement checks use normalized fitness (`fitness / replications`) so mixed `k=2` and `k=6` evaluations remain comparable after generation 40.
+  - Raw objective sum (`sum(collisions) + no_path_count + timeout_count`) is still logged for analysis and backward compatibility.
 - **Post-processing controls** (for faster integrated smoke checks):
   - `--final-validation-top-k` (default `5`)
   - `--final-validation-seeds` (default `20`)
@@ -391,12 +396,22 @@ Recommended rules:
   - `population >= 2`
   - `0 <= elitism <= population`
   - `workers >= 1`
+  - `final-validation-top-k >= 1`
+  - `final-validation-seeds >= 1`
+  - `sensitivity-max-bits >= 0`
   - Reproduction step now safely handles `population == elitism` (fully elitist carry-over), preventing tiny-run crashes
   - Default `population` is set to `120` (override with `--population` as needed)
   - Default `workers` is set to `18` for parallel batch evaluation (override with `--workers`)
-- **Log level** (`--log-level`, default: `quiet`): `quiet` = minimal per-rep I/O (no drone state log, rep dirs deleted after metrics), TensorBoard still enabled; `normal` = standard logs; `verbose` = full logs and Python `SIM_LOG_LEVEL=DEBUG`. Godot respects `GA_LOG_LEVEL` (quiet: skip simple_log and summary JSON).
+- **Log mode** (`--log-mode`, default: `normal`):
+  - `quiet`: Python `SIM_LOG_LEVEL=ERROR`, `SIM_LOG_FORMAT=json`; Godot `GA_LOG_LEVEL=quiet` (skips `simple_log.csv` and `godot_summary.json` in core writers)
+  - `normal`: Python `SIM_LOG_LEVEL=INFO`, `SIM_LOG_FORMAT=table`; Godot `GA_LOG_LEVEL=normal`
+  - `verbose`: Python `SIM_LOG_LEVEL=DEBUG`, `SIM_LOG_FORMAT=json`; Godot `GA_LOG_LEVEL=verbose`
+- **Artifact mode** (`--artifact-mode`, default: `keep_all`):
+  - `keep_all`: keep all per-rep files in `tmp/rep_*`
+  - `keep_failures`: delete successful `rep_*` folders, keep only reps with route-failure counters > 0
+  - `minimal`: keep only `python_server.log`, `godot.log`, `collision_log.csv`, `python_routes_received.csv`, and `godot_summary.json`
 - **Logging/outputs**:
-  - TensorBoard per-generation live metrics (`fitness/*`, `invalid/*`, `ga/diversity_hamming_mean`, `time/generation_seconds`) in all log levels including quiet
+  - TensorBoard per-generation live metrics (`fitness/*`, `invalid/*`, `ga/diversity_hamming_mean`, `time/generation_seconds`) in all modes
   - Terminal generation line now also prints mean route-failure components:
     - `mean_no_path_py` (Python planner no-path)
     - `mean_timeout_py` (Python planner timeout)
@@ -405,11 +420,15 @@ Recommended rules:
     - `mean_no_valid_gd` (Godot-side response missing valid route payload)
     - `best_seed_scores` (best individual's per-seed fitness as `seed:score`)
     - `best_rep_std` (standard deviation of best individual's per-seed fitness scores)
+  - Terminal output now includes post-phase progress lines so long final steps are observable:
+    - `[FinalVal ...]` start/progress/end for held-out candidate validation
+    - `[Sensitivity ...]` start/progress/end (periodic progress every 10 bits, plus skip message when disabled)
   - `generation_metrics.csv`
     - includes `best_seed_fitness_scores` and `best_replication_fitness_std` per generation
+    - includes both raw and normalized fitness columns (`fitness_*_raw` and `fitness_*_selection`) for mixed-k auditability
   - `best_solution.json`
   - `final_validation_summary.json`
-  - `sensitivity_analysis.csv`
+  - `sensitivity_analysis.csv` (only when sensitivity is enabled)
   - `terminal_output.txt` (mirrored GA terminal stdout/stderr)
 - **Integrated run mode (default)**:
   - Builds an oriented graph per chromosome/seed replication
@@ -418,6 +437,10 @@ Recommended rules:
   - Server startup readiness now accepts either an explicit `server_running` log marker or successful socket connect on the assigned WS port (important when quiet logging suppresses INFO lines)
   - Adds startup retry with automatic port fallback for transient bind/startup failures during parallel runs
   - Uses per-replication log file isolation (`GA_COLLISION_LOG_CSV`, `GA_SIMPLE_LOG_CSV`) so collision scoring remains worker-safe
+  - Uses per-replication Python route CSV isolation (`SIM_ROUTES_RECEIVED_CSV`) so waypoint timing exports are worker-safe
+  - Injects mode-controlled env vars:
+    - Python: `SIM_LOG_LEVEL`, `SIM_LOG_FORMAT`
+    - Godot: `GA_LOG_LEVEL`
   - Launches Godot headless in GA autorun mode
   - Stops simulation automatically when workload drains (or max sim time)
   - Scores from per-replication collision CSV (`COLLISION_START` count) and route-failure diagnostics:
@@ -425,6 +448,7 @@ Recommended rules:
     - Python server errors: `route_request_rejected_invalid_nodes`, `pathfinding_error`
     - Godot no-response events: `pre_request_timeout_no_response`, `flight_cancelled_route_timeout`
     - Godot invalid-route-payload events: `route_request_failed_no_valid_route`
+  - Route-failure counters accept full and fixed-width-truncated event names to avoid silent undercount when parsing table logs
 
 #### Running GA Experiment 1
 

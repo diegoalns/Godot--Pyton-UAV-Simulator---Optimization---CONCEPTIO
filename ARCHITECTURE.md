@@ -607,10 +607,12 @@ Canonical run-mode matrix and commands are maintained in `docs/RUN_MODES.md`.
 **Runtime Controls**:
 - `SIM_LOG_LEVEL`: minimum level (`DEBUG|INFO|WARNING|ERROR`, default: INFO)
 - `SIM_LOG_FORMAT`: `table` (default), `json`, or `pretty`
+- `SIM_ROUTES_RECEIVED_CSV`: optional output file path override for Python route timing CSV
 
 **Python CSV Outputs**:
 - `logs/python_routes_received.csv` - One row per waypoint for each received route (`plan_id`, node IDs, overfly time, segment/cumulative durations)
-- Startup behavior: file is cleared when `WebSocketServer.py` starts, then rows are appended for that run
+- Startup behavior: target file is cleared when `WebSocketServer.py` starts, then rows are appended for that run
+- Integrated GA behavior: each replication overrides this target with `SIM_ROUTES_RECEIVED_CSV` to write `tmp/rep_*/python_routes_received.csv`
 
 #### 6. GA Experiment Runner (`Experiments/Ex1-ShtPath-GA/GA-Experiment1.py`)
 
@@ -624,6 +626,7 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 - Represents one chromosome as a full binary orientation vector across all groups
 - Evaluates chromosomes with common random numbers per generation (shared seed set)
 - Computes fitness as `sum(collisions) + no_path_count + timeout_count` across replications
+- Uses normalized selection score (`fitness / replications`) for generation-best choice, elitism ordering, tournament parent selection, and early-stop improvement checks so mixed `k=2` and `k=6` evaluations remain comparable after generation 40
 - Tracks route-failure components per chromosome evaluation:
   - `no_path_count` (Python planner no-path)
   - `timeout_count` (Python planner timeout)
@@ -636,11 +639,12 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 - Evaluates chromosome batches in parallel with a thread pool (`--workers`, default `18`) and cache-aware de-duplication
 - Executes GA operators: tournament selection, uniform crossover, bit-flip mutation, elitism, generational replacement
 - Enforces GA runtime guards for stability in small diagnostics (`population >= 2`, `0 <= elitism <= population`, `workers >= 1`)
+- Enforces post-phase guardrails (`final_validation_top_k >= 1`, `final_validation_seeds >= 1`, `sensitivity_max_bits >= 0`)
 - Supports a safe fully-elitist generation step when `population == elitism` (no offspring phase)
 - GA default configuration now uses `population=120` (CLI override still supported)
 - Ex2 variant at `Experiments/Ex2-ShtPath-GA 16 Workers/GA-Experiment1.py` defaults to `workers=16`
 - Supports early stopping when no best-fitness improvement occurs for a fixed patience window
-- Performs final held-out validation for top candidates and one-bit sensitivity analysis from the best chromosome
+- Performs configurable final held-out validation (`--final-validation-top-k`, `--final-validation-seeds`) and optional one-bit sensitivity analysis (`--run-sensitivity`, `--sensitivity-max-bits`) from the best chromosome
 - Exposes post-phase scaling controls for integrated testing and diagnostics:
   - `--final-validation-top-k`
   - `--final-validation-seeds`
@@ -649,8 +653,14 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 
 **TensorBoard Metrics (per generation)**:
 - `fitness/best`
+- `fitness/best_selection`
+- `fitness/best_raw`
 - `fitness/mean`
+- `fitness/mean_selection`
+- `fitness/mean_raw`
 - `fitness/std`
+- `fitness/std_selection`
+- `fitness/std_raw`
 - `invalid/best_individual_invalid_count`
 - `invalid/num_invalid_individuals`
 - `route/mean_no_path_python`
@@ -663,6 +673,9 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 - Terminal generation output additionally reports best-individual replication diagnostics:
   - `best_seed_scores`: per-seed best-individual fitness as `seed:score` pairs
   - `best_rep_std`: std-dev across those per-seed best-individual fitness values
+- Terminal post-phase output now reports progress for long-running steps:
+  - `[FinalVal ...]` start/progress/end lines during held-out top-k validation
+  - `[Sensitivity ...]` start/progress/end lines during one-bit sweep, periodic every 10 bits, or explicit skipped line when `--no-run-sensitivity` is used
 - Runtime dashboard behavior:
   - TensorBoard can be auto-launched by `GA-Experiment1.py` at run start
   - Default TensorBoard port is `6007` (configurable via `--tensorboard-port`)
@@ -671,14 +684,23 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
   - TensorBoard subprocess logs are persisted per run in `tensorboard_process.log`
   - Auto-launch validates short-lived startup: if the TensorBoard process exits immediately, launch is treated as failed and a warning is emitted
   - Scalar metrics are flushed each generation to improve live dashboard update consistency
-  - **Log level** (`--log-level`): `quiet` (default), `normal`, `verbose`. Quiet: TensorBoard enabled; Python `SIM_LOG_LEVEL=ERROR`; Godot skips simple_log and summary JSON (`GA_LOG_LEVEL`); per-rep dirs removed after reading metrics. Normal: TensorBoard and INFO. Verbose: DEBUG. Godot reads `GA_LOG_LEVEL`; SimpleLogger skips main drone-state log when quiet; SimulationEngine skips writing `godot_summary.json` when quiet.
+  - **Log mode** (`--log-mode`, default `normal`):
+    - `quiet`: Python `SIM_LOG_LEVEL=ERROR`, `SIM_LOG_FORMAT=json`; Godot `GA_LOG_LEVEL=quiet`
+    - `normal`: Python `SIM_LOG_LEVEL=INFO`, `SIM_LOG_FORMAT=table`; Godot `GA_LOG_LEVEL=normal`
+    - `verbose`: Python `SIM_LOG_LEVEL=DEBUG`, `SIM_LOG_FORMAT=json`; Godot `GA_LOG_LEVEL=verbose`
+  - **Artifact mode** (`--artifact-mode`, default `keep_all`):
+    - `keep_all`: keep all per-replication files
+    - `keep_failures`: keep only replications with route-failure counters > 0
+    - `minimal`: keep only `python_server.log`, `godot.log`, `collision_log.csv`, `python_routes_received.csv`, `godot_summary.json`
+  - Godot core writers currently treat only `GA_LOG_LEVEL=quiet` specially (`simple_logger.gd` and `simulation_engine.gd`).
 
 **Output Artifacts (run folder)**:
 - `generation_metrics.csv`
   - Includes `best_seed_fitness_scores` and `best_replication_fitness_std` columns
+  - Includes both raw and normalized fitness columns (`fitness_*_raw`, `fitness_*_selection`) so post-gen-40 mixed-k behavior is auditable
 - `best_solution.json`
 - `final_validation_summary.json`
-- `sensitivity_analysis.csv`
+- `sensitivity_analysis.csv` (generated only when sensitivity is enabled)
 - `tensorboard/` event files
 - `terminal_output.txt` (mirrored GA terminal stdout/stderr for that run)
 
@@ -695,6 +717,9 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
     - `GRAPH_PICKLE_PATH=<rep_oriented_graph.pkl>`
     - `WS_SERVER_HOST=127.0.0.1`
     - `WS_SERVER_PORT=<rep_port>` (replication-specific port isolation for parallel workers)
+    - `SIM_LOG_LEVEL=<mode-mapped>`
+    - `SIM_LOG_FORMAT=<mode-mapped>`
+    - `SIM_ROUTES_RECEIVED_CSV=<rep_python_routes_received.csv>` (replication-specific route timing CSV isolation)
   - Retries Python server startup with automatic new-port fallback when bind/startup fails under parallel contention
 - Startup readiness accepts either `server_running` in server logs or a successful TCP connect on the assigned replication port (supports quiet logging where INFO markers may be absent)
   - After server signals ready, starts Godot in headless batch mode via environment flags (below); if Godot exits within 3 seconds, raises with Godot log path and log tail for debugging:
@@ -707,12 +732,14 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
     - `GA_WEBSOCKET_URL=ws://127.0.0.1:<rep_port>`
     - `GA_COLLISION_LOG_CSV=<rep_collision_log.csv>`
     - `GA_SIMPLE_LOG_CSV=<rep_simple_log.csv>`
+    - `GA_LOG_LEVEL=<mode-mapped>`
   - Collects objective signals from runtime artifacts:
     - Collisions from per-replication collision CSV (`COLLISION_START` rows)
     - Pathfinder failures from Python server logs (`pathfinding_no_path`, `pathfinding_timeout`)
     - Python server errors from log events (`route_request_rejected_invalid_nodes`, `pathfinding_error`)
     - Godot no-response events (`pre_request_timeout_no_response`, `flight_cancelled_route_timeout`)
     - Godot invalid-route-payload events (`route_request_failed_no_valid_route`)
+  - Event parsing for long names also accepts fixed-width-truncated variants to avoid undercounting when reading table-formatted logs
 - Command-mode evaluator is still supported for external adapters.
 
 #### 6a. Baseline Undirected-Orientation Runner (`Experiments/Ex0-Baseline/Baseline Undirected Graph test.py`)
@@ -1033,7 +1060,7 @@ Both simulation time and system clock time are tracked for:
 
 **Python Timing Analysis Logs**:
 - `logs/python_routes_received.csv` - Detailed waypoint timing exported by `WebSocketServer.py` via `sim_logger.py`
-- `logs/python_routes_received.csv` lifecycle - reset on server startup to avoid cross-run carryover, then append mode during runtime
+- `logs/python_routes_received.csv` lifecycle - reset on server startup to avoid cross-run carryover, then append mode during runtime (unless overridden by `SIM_ROUTES_RECEIVED_CSV`)
 - `logs/uav_route_visualization.ipynb` - Route plotting notebook; can label each waypoint with `overfly_time_sim_s` from `python_routes_received.csv` for 3D/2D inspection (commonly kept as local analysis output)
 - `logs/uav_route_visualization.ipynb` label readability - seeded random label jitter (and 2D text background boxes) reduces overlap when multiple drones share identical waypoint paths; current default spread is `xy=0.15`, `z=0.06` (3D), `2d=0.15`
 - `logs/uav_route_visualization.ipynb` route-color matching - waypoint labels use each route line's color to improve visual association between text and path

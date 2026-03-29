@@ -87,6 +87,37 @@ class NullSummaryWriter:
         return
 
 
+LOG_MODE_CHOICES = ("quiet", "normal", "verbose")
+ARTIFACT_MODE_CHOICES = ("keep_all", "keep_failures", "minimal")
+
+
+def resolve_log_mode_settings(log_mode: str) -> dict:
+    """
+    Map runner log mode to Python/Godot logging environment variables.
+    """
+    mode = (log_mode or "").strip().lower()
+    if mode == "quiet":
+        return {
+            "python_log_level": "ERROR",
+            "python_log_format": "json",
+            "godot_log_level": "quiet",
+            "print_every_generation": False,
+        }
+    if mode == "verbose":
+        return {
+            "python_log_level": "DEBUG",
+            "python_log_format": "json",
+            "godot_log_level": "verbose",
+            "print_every_generation": True,
+        }
+    return {
+        "python_log_level": "INFO",
+        "python_log_format": "table",
+        "godot_log_level": "normal",
+        "print_every_generation": True,
+    }
+
+
 class TeeTextIO:
     """
     Mirror writes to the original stream and a run-scoped log file.
@@ -180,8 +211,12 @@ class SimulationAdapter:
         godot_project_dir: Path,
         integrated_max_sim_time: float,
         server_start_timeout: float,
+        log_mode: str = "normal",
+        artifact_mode: str = "keep_all",
     ) -> None:
         self.mode = mode
+        self.log_mode = (log_mode or "normal").strip().lower()
+        self.artifact_mode = (artifact_mode or "keep_all").strip().lower()
         self.sim_command = sim_command
         self.timeout_seconds = timeout_seconds
         self.working_dir = working_dir
@@ -195,6 +230,44 @@ class SimulationAdapter:
         self.server_start_timeout = server_start_timeout
         self._port_lock = threading.Lock()
         self._reserved_ports: set[int] = set()
+
+    @staticmethod
+    def _apply_rep_artifact_policy(
+        rep_dir: Path,
+        artifact_mode: str,
+        had_route_failures: bool,
+    ) -> None:
+        """
+        Apply retention policy to one replication directory after metrics are parsed.
+        """
+        mode = (artifact_mode or "keep_all").strip().lower()
+        if mode == "keep_all":
+            return
+
+        if mode == "keep_failures":
+            if had_route_failures:
+                return
+            shutil.rmtree(rep_dir, ignore_errors=True)
+            return
+
+        # minimal: keep only audit-relevant files and remove the rest.
+        keep_names = {
+            "python_server.log",
+            "godot.log",
+            "collision_log.csv",
+            "python_routes_received.csv",
+            "godot_summary.json",
+        }
+        for entry in rep_dir.iterdir():
+            if entry.name in keep_names:
+                continue
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                try:
+                    entry.unlink()
+                except FileNotFoundError:
+                    pass
 
     @staticmethod
     def _parse_json_from_text(text: str) -> Optional[dict]:
@@ -291,9 +364,43 @@ class SimulationAdapter:
             pickle.dump({"graph": g_new, "metadata": self.base_metadata}, f)
 
     @staticmethod
-    def _wait_for_server_ready(server_log_path: Path, timeout_s: float) -> None:
+    def _wait_for_server_ready(server_log_path: Path, timeout_s: float, server_host: str, server_port: int) -> None:
         deadline = time.time() + timeout_s
         while time.time() < deadline:
+            # Fast path: try a minimal WebSocket handshake so we know the right
+            # service is actually listening, not just "something" on the port.
+            try:
+                sock = socket.create_connection((server_host, int(server_port)), timeout=0.25)
+                try:
+                    sock.settimeout(0.5)
+                    host_header = f"{server_host}:{int(server_port)}"
+                    # Minimal, syntactically valid WebSocket handshake request.
+                    request = (
+                        "GET /healthcheck HTTP/1.1\r\n"
+                        f"Host: {host_header}\r\n"
+                        "Upgrade: websocket\r\n"
+                        "Connection: Upgrade\r\n"
+                        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                        "Sec-WebSocket-Version: 13\r\n"
+                        "\r\n"
+                    )
+                    sock.sendall(request.encode("ascii"))
+                    # Read up to some bytes for the HTTP response headers.
+                    response = sock.recv(1024).decode("iso-8859-1", errors="ignore")
+                    response_lower = response.lower()
+                    if "101" in response.splitlines()[0] and "upgrade: websocket" in response_lower:
+                        # Correct WebSocket server is up and responding.
+                        return
+                    # If the handshake does not look like a WebSocket upgrade,
+                    # fall through and continue waiting.
+                finally:
+                    try:
+                        sock.close()
+                    except OSError:
+                        pass
+            except OSError:
+                # Connection failed; fall back to log-based readiness checks.
+                pass
             if server_log_path.exists():
                 text = server_log_path.read_text(encoding="utf-8", errors="ignore")
                 if "server_running" in text:
@@ -325,13 +432,33 @@ class SimulationAdapter:
         return int(no_path_count), int(timeout_count)
 
     @staticmethod
+    def _count_lines_with_any_token(text: str, tokens: Sequence[str]) -> int:
+        """
+        Count log lines containing at least one token.
+        Avoids double-counting when both full and truncated event names are provided.
+        """
+        if not text:
+            return 0
+        lines = text.splitlines()
+        return int(sum(1 for line in lines if any(token in line for token in tokens)))
+
+    @staticmethod
     def _parse_server_error_count(server_log_path: Path) -> int:
         if not server_log_path.exists():
             return 0
         text = server_log_path.read_text(encoding="utf-8", errors="ignore")
         # Server-side validation and processing failures reported by Python server.
-        invalid_nodes = text.count("route_request_rejected_invalid_nodes")
-        pathfinding_errors = text.count("pathfinding_error")
+        # Include truncated variants to remain robust with fixed-width table formatting.
+        invalid_nodes = SimulationAdapter._count_lines_with_any_token(
+            text,
+            (
+                "route_request_rejected_invalid_nodes",
+                "route_request_rejected_invalid_no",
+            ),
+        )
+        pathfinding_errors = SimulationAdapter._count_lines_with_any_token(
+            text, ("pathfinding_error",)
+        )
         return int(invalid_nodes + pathfinding_errors)
 
     @staticmethod
@@ -339,10 +466,18 @@ class SimulationAdapter:
         if not godot_log_path.exists():
             return 0, 0
         text = godot_log_path.read_text(encoding="utf-8", errors="ignore")
-        no_response_count = text.count("pre_request_timeout_no_response") + text.count(
-            "flight_cancelled_route_timeout"
+        no_response_count = SimulationAdapter._count_lines_with_any_token(
+            text, ("pre_request_timeout_no_response",)
+        ) + SimulationAdapter._count_lines_with_any_token(
+            text, ("flight_cancelled_route_timeout",)
         )
-        no_valid_route_count = text.count("route_request_failed_no_valid_route")
+        no_valid_route_count = SimulationAdapter._count_lines_with_any_token(
+            text,
+            (
+                "route_request_failed_no_valid_route",
+                "route_request_failed_no_valid_ro",
+            ),
+        )
         return int(no_response_count), int(no_valid_route_count)
 
     @staticmethod
@@ -390,13 +525,16 @@ class SimulationAdapter:
         ga_summary = rep_dir / "godot_summary.json"
         collision_csv = rep_dir / "collision_log.csv"
         simple_log_csv = rep_dir / "simple_log.csv"
+        python_routes_csv = rep_dir / "python_routes_received.csv"
         ws_host = "127.0.0.1"
         ws_port = self._select_available_ws_port(rep_hash=rep_hash)
 
+        mode_settings = resolve_log_mode_settings(self.log_mode)
         env_server = os.environ.copy()
         env_server["GRAPH_PICKLE_PATH"] = str(oriented_graph_pickle)
-        env_server["SIM_LOG_FORMAT"] = "table"
-        env_server["SIM_LOG_LEVEL"] = "INFO"
+        env_server["SIM_LOG_FORMAT"] = mode_settings["python_log_format"]
+        env_server["SIM_LOG_LEVEL"] = mode_settings["python_log_level"]
+        env_server["SIM_ROUTES_RECEIVED_CSV"] = str(python_routes_csv)
         env_server["WS_SERVER_HOST"] = ws_host
         env_server["WS_SERVER_PORT"] = str(ws_port)
 
@@ -409,6 +547,7 @@ class SimulationAdapter:
         env_godot["GA_WEBSOCKET_URL"] = f"ws://{ws_host}:{ws_port}"
         env_godot["GA_COLLISION_LOG_CSV"] = str(collision_csv)
         env_godot["GA_SIMPLE_LOG_CSV"] = str(simple_log_csv)
+        env_godot["GA_LOG_LEVEL"] = mode_settings["godot_log_level"]
 
         server_proc = None
         godot_proc = None
@@ -434,7 +573,12 @@ class SimulationAdapter:
                     )
 
                 try:
-                    self._wait_for_server_ready(server_log, self.server_start_timeout)
+                    self._wait_for_server_ready(
+                        server_log,
+                        self.server_start_timeout,
+                        server_host=ws_host,
+                        server_port=ws_port,
+                    )
                     startup_last_error = None
                     break
                 except Exception as e:
@@ -489,6 +633,18 @@ class SimulationAdapter:
         no_path_count, timeout_count = self._parse_pathfinder_status_counts(server_log)
         server_error_count = self._parse_server_error_count(server_log)
         no_response_count, no_valid_route_count = self._parse_godot_response_failure_counts(godot_log)
+        had_route_failures = (
+            no_path_count > 0
+            or timeout_count > 0
+            or server_error_count > 0
+            or no_response_count > 0
+            or no_valid_route_count > 0
+        )
+        self._apply_rep_artifact_policy(
+            rep_dir=rep_dir,
+            artifact_mode=self.artifact_mode,
+            had_route_failures=had_route_failures,
+        )
         return {
             "collisions": collisions,
             "no_path_count": no_path_count,
@@ -502,6 +658,7 @@ class SimulationAdapter:
                 "godot_log": str(godot_log),
                 "ga_summary_json": str(ga_summary),
                 "collision_csv": str(collision_csv),
+                "python_routes_received_csv": str(python_routes_csv),
                 "websocket_port": ws_port,
             },
         }
@@ -909,6 +1066,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--invalid-penalty", type=float, default=10000.0)
     parser.add_argument("--workers", type=int, default=18)
     parser.add_argument("--seed", type=int, default=160)
+    parser.add_argument("--log-mode", type=str, default="normal", choices=list(LOG_MODE_CHOICES))
+    parser.add_argument(
+        "--artifact-mode",
+        type=str,
+        default="keep_all",
+        choices=list(ARTIFACT_MODE_CHOICES),
+        help=(
+            "Replication artifact retention policy in integrated mode: "
+            "keep_all, keep_failures, or minimal."
+        ),
+    )
     parser.add_argument("--eval-mode", type=str, default="integrated", choices=["integrated", "command", "mock"])
     parser.add_argument(
         "--sim-command",
@@ -934,6 +1102,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tensorboard-host", type=str, default="127.0.0.1")
     parser.add_argument("--auto-launch-tensorboard", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--auto-open-tensorboard-browser", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--final-validation-top-k", type=int, default=5)
+    parser.add_argument("--final-validation-seeds", type=int, default=20)
+    parser.add_argument("--run-sensitivity", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--sensitivity-max-bits",
+        type=int,
+        default=0,
+        help="Maximum bit count for sensitivity sweep (0 = all bits).",
+    )
     parser.add_argument("--run-root", type=str, default="./Experiments/Ex1-ShtPath-GA/ga_runs")
     return parser.parse_args()
 
@@ -950,6 +1127,14 @@ def main() -> None:
         raise ValueError("--elitism must be <= --population.")
     if args.workers < 1:
         raise ValueError("--workers must be >= 1.")
+    assert args.log_mode in LOG_MODE_CHOICES
+    assert args.artifact_mode in ARTIFACT_MODE_CHOICES
+    if args.final_validation_top_k < 1:
+        raise ValueError("--final-validation-top-k must be >= 1.")
+    if args.final_validation_seeds < 1:
+        raise ValueError("--final-validation-seeds must be >= 1.")
+    if args.sensitivity_max_bits < 0:
+        raise ValueError("--sensitivity-max-bits must be >= 0.")
 
     if args.eval_mode == "command" and not args.sim_command.strip():
         raise ValueError("When --eval-mode=command, --sim-command is required.")
@@ -1046,6 +1231,8 @@ def main() -> None:
 
     adapter = SimulationAdapter(
         mode=args.eval_mode,
+        log_mode=args.log_mode,
+        artifact_mode=args.artifact_mode,
         sim_command=args.sim_command.strip() or None,
         timeout_seconds=float(args.sim_timeout_seconds),
         working_dir=Path(__file__).resolve().parents[2],  # repository root
@@ -1060,7 +1247,8 @@ def main() -> None:
     )
     cache: Dict[Tuple[str, str], EvalResult] = {}
 
-    best_global_fitness = float("inf")
+    best_global_selection_score = float("inf")
+    best_global_fitness_raw = float("inf")
     best_global_chromosome: Optional[np.ndarray] = None
     best_global_eval: Optional[EvalResult] = None
     best_candidate_archive: Dict[str, float] = {}
@@ -1106,6 +1294,8 @@ def main() -> None:
                 evals[idx] = refined_batch[local_i]
 
         fitness_values = np.array([x.fitness for x in evals], dtype=float)
+        replications = np.array([max(1, int(x.replications)) for x in evals], dtype=float)
+        selection_scores = fitness_values / replications
         invalid_counts = np.array([x.invalid_count for x in evals], dtype=int)
         invalid_flags = np.array([1 if x.is_invalid else 0 for x in evals], dtype=int)
         mean_no_path = float(np.mean([x.no_path_count for x in evals]))
@@ -1114,11 +1304,14 @@ def main() -> None:
         mean_no_response = float(np.mean([x.no_response_count for x in evals]))
         mean_no_valid_route = float(np.mean([x.no_valid_route_count for x in evals]))
 
-        gen_best_idx = int(np.argmin(fitness_values))
-        gen_best_fit = float(fitness_values[gen_best_idx])
+        gen_best_idx = int(np.argmin(selection_scores))
+        gen_best_selection = float(selection_scores[gen_best_idx])
+        gen_best_fit_raw = float(fitness_values[gen_best_idx])
         gen_best_eval = evals[gen_best_idx]
-        gen_mean_fit = float(np.mean(fitness_values))
-        gen_std_fit = float(np.std(fitness_values))
+        gen_mean_selection = float(np.mean(selection_scores))
+        gen_std_selection = float(np.std(selection_scores))
+        gen_mean_fit_raw = float(np.mean(fitness_values))
+        gen_std_fit_raw = float(np.std(fitness_values))
         num_invalid = int(np.sum(invalid_flags))
         best_invalid_count = int(gen_best_eval.invalid_count)
         best_replication_fitness_std = float(gen_best_eval.replication_fitness_std)
@@ -1131,11 +1324,12 @@ def main() -> None:
 
         best_bitstring = bitstring_from_array(population[gen_best_idx])
         best_candidate_archive[best_bitstring] = min(
-            gen_best_fit, best_candidate_archive.get(best_bitstring, float("inf"))
+            gen_best_selection, best_candidate_archive.get(best_bitstring, float("inf"))
         )
 
-        if gen_best_fit < best_global_fitness:
-            best_global_fitness = gen_best_fit
+        if gen_best_selection < best_global_selection_score:
+            best_global_selection_score = gen_best_selection
+            best_global_fitness_raw = gen_best_fit_raw
             best_global_chromosome = population[gen_best_idx].copy()
             best_global_eval = evals[gen_best_idx]
             no_improve_counter = 0
@@ -1145,9 +1339,15 @@ def main() -> None:
         gen_seconds = float(time.time() - gen_start)
         row = {
             "generation": gen,
-            "fitness_best": gen_best_fit,
-            "fitness_mean": gen_mean_fit,
-            "fitness_std": gen_std_fit,
+            "fitness_best": gen_best_fit_raw,
+            "fitness_best_selection": gen_best_selection,
+            "fitness_best_raw": gen_best_fit_raw,
+            "fitness_mean": gen_mean_fit_raw,
+            "fitness_std": gen_std_fit_raw,
+            "fitness_mean_selection": gen_mean_selection,
+            "fitness_std_selection": gen_std_selection,
+            "fitness_mean_raw": gen_mean_fit_raw,
+            "fitness_std_raw": gen_std_fit_raw,
             "invalid_best_individual_invalid_count": best_invalid_count,
             "invalid_num_invalid_individuals": num_invalid,
             "route_mean_no_path_python": mean_no_path,
@@ -1166,9 +1366,15 @@ def main() -> None:
         }
         generation_rows.append(row)
 
-        writer.add_scalar("fitness/best", gen_best_fit, gen)
-        writer.add_scalar("fitness/mean", gen_mean_fit, gen)
-        writer.add_scalar("fitness/std", gen_std_fit, gen)
+        writer.add_scalar("fitness/best", gen_best_fit_raw, gen)
+        writer.add_scalar("fitness/best_selection", gen_best_selection, gen)
+        writer.add_scalar("fitness/best_raw", gen_best_fit_raw, gen)
+        writer.add_scalar("fitness/mean", gen_mean_fit_raw, gen)
+        writer.add_scalar("fitness/mean_selection", gen_mean_selection, gen)
+        writer.add_scalar("fitness/mean_raw", gen_mean_fit_raw, gen)
+        writer.add_scalar("fitness/std", gen_std_fit_raw, gen)
+        writer.add_scalar("fitness/std_selection", gen_std_selection, gen)
+        writer.add_scalar("fitness/std_raw", gen_std_fit_raw, gen)
         writer.add_scalar("invalid/best_individual_invalid_count", best_invalid_count, gen)
         writer.add_scalar("invalid/num_invalid_individuals", num_invalid, gen)
         writer.add_scalar("route/mean_no_path_python", mean_no_path, gen)
@@ -1180,18 +1386,22 @@ def main() -> None:
         writer.add_scalar("time/generation_seconds", gen_seconds, gen)
         writer.flush()
 
-        print(
-            f"[Gen {gen:03d}] best={gen_best_fit:.4f} mean={gen_mean_fit:.4f} "
-            f"std={gen_std_fit:.4f} invalid={num_invalid}/{args.population} "
-            f"mean_no_path_py={mean_no_path:.2f} "
-            f"mean_timeout_py={mean_planner_timeout:.2f} "
-            f"mean_error_py={mean_server_error:.2f} "
-            f"mean_no_resp_gd={mean_no_response:.2f} "
-            f"mean_no_valid_gd={mean_no_valid_route:.2f} "
-            f"best_seed_scores=[{best_seed_scores_str}] "
-            f"best_rep_std={best_replication_fitness_std:.4f} "
-            f"diversity={diversity:.4f} t={gen_seconds:.2f}s"
-        )
+        mode_settings = resolve_log_mode_settings(args.log_mode)
+        should_print_gen_line = bool(mode_settings["print_every_generation"]) or gen == 1 or gen % 10 == 0
+        if should_print_gen_line:
+            print(
+                f"[Gen {gen:03d}] best_sel={gen_best_selection:.4f} best_raw={gen_best_fit_raw:.4f} "
+                f"mean_sel={gen_mean_selection:.4f} std_sel={gen_std_selection:.4f} "
+                f"invalid={num_invalid}/{args.population} "
+                f"mean_no_path_py={mean_no_path:.2f} "
+                f"mean_timeout_py={mean_planner_timeout:.2f} "
+                f"mean_error_py={mean_server_error:.2f} "
+                f"mean_no_resp_gd={mean_no_response:.2f} "
+                f"mean_no_valid_gd={mean_no_valid_route:.2f} "
+                f"best_seed_scores=[{best_seed_scores_str}] "
+                f"best_rep_std={best_replication_fitness_std:.4f} "
+                f"diversity={diversity:.4f} t={gen_seconds:.2f}s"
+            )
 
         if no_improve_counter >= args.early_stop_patience:
             print(
@@ -1201,7 +1411,7 @@ def main() -> None:
             break
 
         # Selection + reproduction.
-        elite_indices = np.argsort(fitness_values)[: args.elitism]
+        elite_indices = np.argsort(selection_scores)[: args.elitism]
         elites = population[elite_indices].copy()
 
         offspring_target = args.population - args.elitism
@@ -1212,7 +1422,7 @@ def main() -> None:
             offspring: List[np.ndarray] = []
             while len(offspring) < offspring_target:
                 p1_idx, p2_idx = tournament_select_indices(
-                    fitness_values=fitness_values, tournament_size=args.tournament_size, rng=rng
+                    fitness_values=selection_scores, tournament_size=args.tournament_size, rng=rng
                 )
                 c1, c2 = uniform_crossover(
                     parent_a=population[p1_idx],
@@ -1230,7 +1440,7 @@ def main() -> None:
             population = np.vstack((elites, offspring_array))
             population = population[: args.population]
 
-    # 4) Final validation on held-out seeds for best 5.
+    # 4) Final validation on held-out seeds for configurable top-K.
     if best_global_chromosome is None:
         raise RuntimeError("GA finished without a best solution.")
 
@@ -1241,17 +1451,27 @@ def main() -> None:
         final_candidates[bs] = population[i].copy()
     final_candidates[bitstring_from_array(best_global_chromosome)] = best_global_chromosome.copy()
 
-    # Rank by best-known archived fitness (fallback inf).
+    # Rank by best-known archived selection score (fallback inf).
     ranked_candidates = sorted(
         final_candidates.items(),
         key=lambda kv: best_candidate_archive.get(kv[0], float("inf")),
     )
-    top5 = ranked_candidates[:5]
+    top_k = min(len(ranked_candidates), int(args.final_validation_top_k))
+    top_candidates = ranked_candidates[:top_k]
 
-    heldout_seeds = build_generation_seed_list(base_seed=args.seed + 99991, generation=999, max_k=20)
+    heldout_seeds = build_generation_seed_list(
+        base_seed=args.seed + 99991,
+        generation=999,
+        max_k=int(args.final_validation_seeds),
+    )
     heldout_sig = seed_signature(heldout_seeds)
+    print(
+        f"[FinalVal] start top_k={top_k}/{len(ranked_candidates)} heldout_seeds={len(heldout_seeds)}"
+    )
+    final_val_start = time.time()
     final_validation = []
-    for bitstring, chrom in top5:
+    for cand_i, (bitstring, chrom) in enumerate(top_candidates, start=1):
+        cand_start = time.time()
         res = evaluate_chromosome(
             chromosome=chrom,
             seeds=heldout_seeds,
@@ -1278,28 +1498,25 @@ def main() -> None:
                 "seed_signature": heldout_sig,
             }
         )
+        cand_elapsed = float(time.time() - cand_start)
+        print(
+            f"[FinalVal {cand_i:03d}/{top_k:03d}] fit={res.fitness:.4f} "
+            f"invalid={res.invalid_count} bits={bitstring[:16]}... t={cand_elapsed:.2f}s"
+        )
     final_validation.sort(key=lambda x: float(x["fitness"]))
     best_validated = final_validation[0]
     best_validated_bits = np.array([int(ch) for ch in best_validated["bitstring"]], dtype=np.int8)
-
-    # 5) One-bit sensitivity analysis from best validated chromosome on held-out seeds.
-    best_val_result = evaluate_chromosome(
-        chromosome=best_validated_bits,
-        seeds=heldout_seeds,
-        adapter=adapter,
-        invalid_threshold=args.invalid_threshold,
-        invalid_penalty=args.invalid_penalty,
-        variable_to_group_list=variable_to_group_list,
-        cache=cache,
-        run_tmp_dir=run_tmp_dir,
+    print(
+        f"[FinalVal] done best_fit={float(best_validated['fitness']):.4f} "
+        f"elapsed={float(time.time() - final_val_start):.2f}s"
     )
-    base_fit = best_val_result.fitness
+
     sensitivity_rows = []
-    for bit_idx in range(num_variables):
-        flipped = best_validated_bits.copy()
-        flipped[bit_idx] = 1 - flipped[bit_idx]
-        flipped_res = evaluate_chromosome(
-            chromosome=flipped,
+    sensitivity_bit_count_used = 0
+    # 5) One-bit sensitivity analysis from best validated chromosome on held-out seeds.
+    if args.run_sensitivity:
+        best_val_result = evaluate_chromosome(
+            chromosome=best_validated_bits,
             seeds=heldout_seeds,
             adapter=adapter,
             invalid_threshold=args.invalid_threshold,
@@ -1308,20 +1525,69 @@ def main() -> None:
             cache=cache,
             run_tmp_dir=run_tmp_dir,
         )
-        delta = float(flipped_res.fitness - base_fit)
-        sensitivity_rows.append(
-            {
-                "bit_index": bit_idx,
-                "base_bit": int(best_validated_bits[bit_idx]),
-                "flipped_bit": int(flipped[bit_idx]),
-                "base_fitness": base_fit,
-                "flipped_fitness": float(flipped_res.fitness),
-                "delta_fitness": delta,
-                "abs_delta_fitness": abs(delta),
-                "is_invalid_after_flip": bool(flipped_res.is_invalid),
-            }
+        base_fit = best_val_result.fitness
+        if args.sensitivity_max_bits == 0:
+            bit_count = num_variables
+        else:
+            bit_count = min(num_variables, int(args.sensitivity_max_bits))
+        sensitivity_bit_count_used = int(bit_count)
+        print(
+            f"[Sensitivity] start bits={sensitivity_bit_count_used}/{num_variables} "
+            f"heldout_seeds={len(heldout_seeds)}"
         )
-    sensitivity_rows.sort(key=lambda x: float(x["abs_delta_fitness"]), reverse=True)
+        sensitivity_start = time.time()
+        progress_every = 10
+        max_abs_delta = 0.0
+        last_delta = 0.0
+        for bit_idx in range(bit_count):
+            flipped = best_validated_bits.copy()
+            flipped[bit_idx] = 1 - flipped[bit_idx]
+            flipped_res = evaluate_chromosome(
+                chromosome=flipped,
+                seeds=heldout_seeds,
+                adapter=adapter,
+                invalid_threshold=args.invalid_threshold,
+                invalid_penalty=args.invalid_penalty,
+                variable_to_group_list=variable_to_group_list,
+                cache=cache,
+                run_tmp_dir=run_tmp_dir,
+            )
+            delta = float(flipped_res.fitness - base_fit)
+            sensitivity_rows.append(
+                {
+                    "bit_index": bit_idx,
+                    "base_bit": int(best_validated_bits[bit_idx]),
+                    "flipped_bit": int(flipped[bit_idx]),
+                    "base_fitness": base_fit,
+                    "flipped_fitness": float(flipped_res.fitness),
+                    "delta_fitness": delta,
+                    "abs_delta_fitness": abs(delta),
+                    "is_invalid_after_flip": bool(flipped_res.is_invalid),
+                }
+            )
+            max_abs_delta = max(max_abs_delta, abs(delta))
+            last_delta = delta
+            processed = bit_idx + 1
+            if processed % progress_every == 0 or processed == bit_count:
+                elapsed = float(time.time() - sensitivity_start)
+                if processed > 0:
+                    eta = float((elapsed / processed) * (bit_count - processed))
+                else:
+                    eta = 0.0
+                print(
+                    f"[Sensitivity {processed:03d}/{bit_count:03d}] "
+                    f"last_delta={last_delta:.4f} max_abs_delta={max_abs_delta:.4f} "
+                    f"elapsed={elapsed:.2f}s eta={eta:.2f}s"
+                )
+        sensitivity_rows.sort(key=lambda x: float(x["abs_delta_fitness"]), reverse=True)
+        top_bit = int(sensitivity_rows[0]["bit_index"]) if sensitivity_rows else -1
+        top_abs_delta = float(sensitivity_rows[0]["abs_delta_fitness"]) if sensitivity_rows else 0.0
+        print(
+            f"[Sensitivity] done top_bit={top_bit} top_abs_delta={top_abs_delta:.4f} "
+            f"elapsed={float(time.time() - sensitivity_start):.2f}s"
+        )
+    else:
+        print("[Sensitivity] skipped (--no-run-sensitivity).")
 
     # 6) Persist outputs.
     generation_csv = run_dir / "generation_metrics.csv"
@@ -1348,20 +1614,27 @@ def main() -> None:
 
     final_validation_path = run_dir / "final_validation_summary.json"
     with final_validation_path.open("w", encoding="utf-8") as f:
+        summary = {
+            "heldout_seed_signature": heldout_sig,
+            "top_k_requested": int(args.final_validation_top_k),
+            "top_k_used": int(top_k),
+            "heldout_seeds_count": int(len(heldout_seeds)),
+            "top_results": final_validation,
+        }
+        if int(top_k) == 5:
+            summary["top5_results"] = final_validation
         json.dump(
-            {
-                "heldout_seed_signature": heldout_sig,
-                "top5_results": final_validation,
-            },
+            summary,
             f,
             indent=2,
         )
 
     sensitivity_csv = run_dir / "sensitivity_analysis.csv"
-    with sensitivity_csv.open("w", newline="", encoding="utf-8") as f:
-        writer_csv = csv.DictWriter(f, fieldnames=list(sensitivity_rows[0].keys()))
-        writer_csv.writeheader()
-        writer_csv.writerows(sensitivity_rows)
+    if args.run_sensitivity and sensitivity_rows:
+        with sensitivity_csv.open("w", newline="", encoding="utf-8") as f:
+            writer_csv = csv.DictWriter(f, fieldnames=list(sensitivity_rows[0].keys()))
+            writer_csv.writeheader()
+            writer_csv.writerows(sensitivity_rows)
 
     config_path = run_dir / "run_config.json"
     with config_path.open("w", encoding="utf-8") as f:
@@ -1390,10 +1663,17 @@ def main() -> None:
                 "tensorboard_host": args.tensorboard_host,
                 "auto_launch_tensorboard": args.auto_launch_tensorboard,
                 "auto_open_tensorboard_browser": args.auto_open_tensorboard_browser,
+                "final_validation_top_k": args.final_validation_top_k,
+                "final_validation_seeds": args.final_validation_seeds,
+                "run_sensitivity": args.run_sensitivity,
+                "sensitivity_max_bits": args.sensitivity_max_bits,
+                "sensitivity_bit_count_used": sensitivity_bit_count_used,
                 "pickle_file": args.pickle_file,
                 "num_variables": num_variables,
                 "run_id": run_id,
                 "base_seed": args.seed,
+                "log_mode": args.log_mode,
+                "artifact_mode": args.artifact_mode,
             },
             f,
             indent=2,
@@ -1406,12 +1686,19 @@ def main() -> None:
     print("=" * 88)
     print("GA EXPERIMENT COMPLETE")
     print("=" * 88)
+    print(f"Best GA selection score: {best_global_selection_score:.6f}")
+    print(f"Best GA raw fitness: {best_global_fitness_raw:.6f}")
     print(f"Run directory: {run_dir}")
     print(f"Best fitness: {best_validated['fitness']}")
     print(f"Best chromosome bitstring: {best_validated['bitstring']}")
     print(f"Generation metrics CSV: {generation_csv}")
     print(f"Final validation summary: {final_validation_path}")
-    print(f"Sensitivity CSV: {sensitivity_csv}")
+    if args.run_sensitivity and sensitivity_rows:
+        print(f"Sensitivity CSV: {sensitivity_csv}")
+    elif args.run_sensitivity:
+        print("Sensitivity CSV: not generated (no sensitivity rows were produced).")
+    else:
+        print("Sensitivity CSV: skipped (--no-run-sensitivity).")
     print(f"TensorBoard logdir: {tb_dir}")
     print(f"TensorBoard launch command: tensorboard --logdir \"{tb_dir}\"")
     print(f"TensorBoard URL: {tb_url}")
