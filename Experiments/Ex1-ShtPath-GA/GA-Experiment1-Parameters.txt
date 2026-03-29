@@ -124,3 +124,47 @@ Run artifacts written by GA-Experiment1.py
 - run_config.json
 - tensorboard/ (event files)
 - terminal_output.txt
+
+
+Notes
+
+--log-mode: quiet | normal | verbose
+--artifact-mode: keep_all | keep_failures | minimal
+--eval-mode: integrated | command | mock
+For --eval-mode command, set a real --sim-command (non-empty).
+TensorBoard: use --no-auto-launch-tensorboard and --no-auto-open-tensorboard-browser instead of the positive flags if you want them off.
+Sensitivity: use --no-run-sensitivity to disable; --sensitivity-max-bits 0 means all bits.
+Point --python-exe at your interpreter if needed (e.g. full path to python.exe).
+One-line variant (same args, no backticks):
+
+python "Experiments/Ex1-ShtPath-GA/GA-Experiment1.py" `
+  --pickle-file "./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl" `
+  --population 120 `
+  --generations 120 `
+  --tournament-size 3 `
+  --crossover-prob 0.90 `
+  --elitism 2 `
+  --early-stop-patience 20 `
+  --invalid-threshold 1000 `
+  --invalid-penalty 10000.0 `
+  --workers 18 `
+  --seed 069 `
+  --log-mode normal `
+  --artifact-mode keep_all `
+  --eval-mode integrated `
+  --sim-timeout-seconds 360.0 `
+  --python-exe "python" `
+  --websocket-server-script "./scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py" `
+  --godot-exe "godot4" `
+  --godot-project-dir "." `
+  --integrated-max-sim-time 15000.0 `
+  --server-start-timeout 20.0 `
+  --tensorboard-port 6007 `
+  --tensorboard-host "127.0.0.1" `
+  --auto-launch-tensorboard `
+  --auto-open-tensorboard-browser `
+  --final-validation-top-k 2 `
+  --final-validation-seeds 2 `
+  --no-run-sensitivity `
+  --sensitivity-max-bits 0 `
+  --run-root "./Experiments/Ex1-ShtPath-GA/ga_runs"
