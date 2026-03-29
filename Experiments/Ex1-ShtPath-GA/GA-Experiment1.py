@@ -367,11 +367,39 @@ class SimulationAdapter:
     def _wait_for_server_ready(server_log_path: Path, timeout_s: float, server_host: str, server_port: int) -> None:
         deadline = time.time() + timeout_s
         while time.time() < deadline:
-            # Fast path: if socket is connectable, server is ready even if logs are quiet.
+            # Fast path: try a minimal WebSocket handshake so we know the right
+            # service is actually listening, not just "something" on the port.
             try:
-                with socket.create_connection((server_host, int(server_port)), timeout=0.25):
-                    return
+                sock = socket.create_connection((server_host, int(server_port)), timeout=0.25)
+                try:
+                    sock.settimeout(0.5)
+                    host_header = f"{server_host}:{int(server_port)}"
+                    # Minimal, syntactically valid WebSocket handshake request.
+                    request = (
+                        "GET /healthcheck HTTP/1.1\r\n"
+                        f"Host: {host_header}\r\n"
+                        "Upgrade: websocket\r\n"
+                        "Connection: Upgrade\r\n"
+                        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                        "Sec-WebSocket-Version: 13\r\n"
+                        "\r\n"
+                    )
+                    sock.sendall(request.encode("ascii"))
+                    # Read up to some bytes for the HTTP response headers.
+                    response = sock.recv(1024).decode("iso-8859-1", errors="ignore")
+                    response_lower = response.lower()
+                    if "101" in response.splitlines()[0] and "upgrade: websocket" in response_lower:
+                        # Correct WebSocket server is up and responding.
+                        return
+                    # If the handshake does not look like a WebSocket upgrade,
+                    # fall through and continue waiting.
+                finally:
+                    try:
+                        sock.close()
+                    except OSError:
+                        pass
             except OSError:
+                # Connection failed; fall back to log-based readiness checks.
                 pass
             if server_log_path.exists():
                 text = server_log_path.read_text(encoding="utf-8", errors="ignore")
