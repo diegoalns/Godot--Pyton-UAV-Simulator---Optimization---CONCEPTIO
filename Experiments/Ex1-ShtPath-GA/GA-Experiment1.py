@@ -1099,10 +1099,8 @@ def main() -> None:
         raise ValueError("--elitism must be <= --population.")
     if args.workers < 1:
         raise ValueError("--workers must be >= 1.")
-    if args.log_mode not in LOG_MODE_CHOICES:
-        raise ValueError("--log-mode must be one of: quiet, normal, verbose.")
-    if args.artifact_mode not in ARTIFACT_MODE_CHOICES:
-        raise ValueError("--artifact-mode must be one of: keep_all, keep_failures, minimal.")
+    assert args.log_mode in LOG_MODE_CHOICES
+    assert args.artifact_mode in ARTIFACT_MODE_CHOICES
     if args.final_validation_top_k < 1:
         raise ValueError("--final-validation-top-k must be >= 1.")
     if args.final_validation_seeds < 1:
