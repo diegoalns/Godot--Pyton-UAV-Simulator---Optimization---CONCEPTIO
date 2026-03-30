@@ -626,7 +626,7 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 - Represents one chromosome as a full binary orientation vector across all groups
 - Evaluates chromosomes with common random numbers per generation (shared seed set)
 - Computes fitness as `sum(collisions) + no_path_count + timeout_count` across replications
-- Uses normalized selection score (`fitness / replications`) for generation-best choice, elitism ordering, tournament parent selection, and early-stop improvement checks so mixed `k=2` and `k=6` evaluations remain comparable after generation 40
+- Uses normalized selection score (`fitness / replications`) for generation-best choice, elitism ordering, tournament parent selection, and early-stop improvement checks so selection remains per-replication comparable
 - Tracks route-failure components per chromosome evaluation:
   - `no_path_count` (Python planner no-path)
   - `timeout_count` (Python planner timeout)
@@ -652,27 +652,25 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
   - `--sensitivity-max-bits` (`0` means all chromosome bits)
 
 **TensorBoard Metrics (per generation)**:
-- `fitness/best`
-- `fitness/best_selection`
-- `fitness/best_raw`
-- `fitness/mean`
-- `fitness/mean_selection`
-- `fitness/mean_raw`
-- `fitness/std`
-- `fitness/std_selection`
-- `fitness/std_raw`
-- `invalid/best_individual_invalid_count`
-- `invalid/num_invalid_individuals`
-- `route/mean_no_path_python`
-- `route/mean_planner_timeout_python`
-- `route/mean_server_error_python`
-- `route/mean_no_response_godot`
-- `route/mean_no_valid_route_payload_godot`
-- `ga/diversity_hamming_mean`
-- `time/generation_seconds`
-- Terminal generation output additionally reports best-individual replication diagnostics:
+- `best_individual/selection_score`
+- `best_individual/fitness_raw`
+- `best_individual/planner_invalid_count`
+- `best_individual/seed_fitness_std`
+- `population/selection_score_mean`
+- `population/selection_score_std`
+- `population/fitness_raw_mean`
+- `population/fitness_raw_std`
+- `population/invalid_individuals_count`
+- `population/invalid_individuals_ratio`
+- `population/diversity_hamming_mean`
+- `population/no_path_count_mean`
+- `population/planner_timeout_count_mean`
+- `population/server_error_count_mean`
+- `population/no_response_count_mean`
+- `population/no_valid_route_count_mean`
+- `generation/seconds`
+- Terminal generation output mirrors the same schema and still includes:
   - `best_seed_scores`: per-seed best-individual fitness as `seed:score` pairs
-  - `best_rep_std`: std-dev across those per-seed best-individual fitness values
 - Terminal post-phase output now reports progress for long-running steps:
   - `[FinalVal ...]` start/progress/end lines during held-out top-k validation
   - `[Sensitivity ...]` start/progress/end lines during one-bit sweep, periodic every 10 bits, or explicit skipped line when `--no-run-sensitivity` is used
@@ -696,10 +694,12 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 
 **Output Artifacts (run folder)**:
 - `generation_metrics.csv`
-  - Includes `best_seed_fitness_scores` and `best_replication_fitness_std` columns
-  - Includes both raw and normalized fitness columns (`fitness_*_raw`, `fitness_*_selection`) so post-gen-40 mixed-k behavior is auditable
+  - Explicit schema using `best_individual_*`, `population_*`, `generation_seconds`, and `seed_signature_base`
+  - Includes `best_individual_seed_fitness_std` for best-individual seed variability tracking
 - `best_solution.json`
+  - Explicit final keys: `best_individual_*` and `seed_signature_heldout`
 - `final_validation_summary.json`
+  - Explicit final-validation keys: `seed_signature_heldout`, `heldout_seed_count`, and `candidate_*` records in `top_results`
 - `sensitivity_analysis.csv` (generated only when sensitivity is enabled)
 - `tensorboard/` event files
 - `terminal_output.txt` (mirrored GA terminal stdout/stderr for that run)
@@ -1083,6 +1083,6 @@ Both simulation time and system clock time are tracked for:
 
 ---
 
-**Last Updated**: 2026-03-21 - Added repository `.gitignore` guidance for generated runtime/experiment artifacts
-**Documentation Version**: 1.7
+**Last Updated**: 2026-03-30 - Updated GA Experiment 1 metrics schema to explicit best_individual/population and candidate/final artifact naming
+**Documentation Version**: 1.8
 
