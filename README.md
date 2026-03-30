@@ -379,11 +379,10 @@ Recommended rules:
 - **Objective**: minimize `sum(collisions) + no_path_count + timeout_count` from simulation outcomes
 - **Invalid handling**: chromosome evaluation still flags invalid when `no_path_count + timeout_count >= 1000`, but fitness is now computed from the objective sum above
 - **Replication schedule**:
-  - Generations 1-40: `k=2`
-  - Generations 41-120: base `k=2` + top 20% re-evaluated at `k=6`
+  - All generations: `k=3` for all individuals
   - Final validation: top `--final-validation-top-k` candidates at held-out `k=--final-validation-seeds`
 - **Selection metric**:
-  - GA parent selection, elitism, generation-best tracking, and early-stop improvement checks use normalized fitness (`fitness / replications`) so mixed `k=2` and `k=6` evaluations remain comparable after generation 40.
+  - GA parent selection, elitism, generation-best tracking, and early-stop improvement checks use normalized fitness (`fitness / replications`) so selection remains per-replication comparable.
   - Raw objective sum (`sum(collisions) + no_path_count + timeout_count`) is still logged for analysis and backward compatibility.
 - **Post-processing controls** (for faster integrated smoke checks):
   - `--final-validation-top-k` (default `5`)
@@ -425,7 +424,7 @@ Recommended rules:
     - `[Sensitivity ...]` start/progress/end (periodic progress every 10 bits, plus skip message when disabled)
   - `generation_metrics.csv`
     - includes `best_seed_fitness_scores` and `best_replication_fitness_std` per generation
-    - includes both raw and normalized fitness columns (`fitness_*_raw` and `fitness_*_selection`) for mixed-k auditability
+    - includes both raw and normalized fitness columns (`fitness_*_raw` and `fitness_*_selection`) for objective/selection auditability
   - `best_solution.json`
   - `final_validation_summary.json`
   - `sensitivity_analysis.csv` (only when sensitivity is enabled)

@@ -1258,9 +1258,9 @@ def main() -> None:
     # 3) Evolution loop.
     for gen in range(1, args.generations + 1):
         gen_start = time.time()
-        max_k = 2 if gen <= 40 else 6
+        max_k = 3
         gen_seeds = build_generation_seed_list(base_seed=args.seed, generation=gen, max_k=max_k)
-        base_seeds = gen_seeds[:2]
+        base_seeds = gen_seeds[:3]
 
         evals = evaluate_population_batch(
             chromosomes=population,
@@ -1273,25 +1273,6 @@ def main() -> None:
             run_tmp_dir=run_tmp_dir,
             workers=args.workers,
         )
-
-        # Re-evaluate top 20% with k=6 for generations 41-120.
-        if gen >= 41:
-            fitness_array = np.array([x.fitness for x in evals], dtype=float)
-            top_count = max(1, int(np.ceil(0.20 * args.population)))
-            top_indices = np.argsort(fitness_array)[:top_count]
-            refined_batch = evaluate_population_batch(
-                chromosomes=population[top_indices],
-                seeds=gen_seeds[:6],
-                adapter=adapter,
-                invalid_threshold=args.invalid_threshold,
-                invalid_penalty=args.invalid_penalty,
-                variable_to_group_list=variable_to_group_list,
-                cache=cache,
-                run_tmp_dir=run_tmp_dir,
-                workers=args.workers,
-            )
-            for local_i, idx in enumerate(top_indices.tolist()):
-                evals[idx] = refined_batch[local_i]
 
         fitness_values = np.array([x.fitness for x in evals], dtype=float)
         replications = np.array([max(1, int(x.replications)) for x in evals], dtype=float)
@@ -1357,8 +1338,8 @@ def main() -> None:
             "route_mean_no_valid_route_payload_godot": mean_no_valid_route,
             "ga_diversity_hamming_mean": diversity,
             "time_generation_seconds": gen_seconds,
-            "k_base": 2,
-            "k_refined_top20": 6 if gen >= 41 else 0,
+            "k_base": 3,
+            "k_refined_top20": 0,
             "seed_signature_base": seed_signature(base_seeds),
             "seed_signature_full": seed_signature(gen_seeds),
             "best_replication_fitness_std": best_replication_fitness_std,

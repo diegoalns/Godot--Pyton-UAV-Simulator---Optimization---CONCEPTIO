@@ -34,16 +34,9 @@ GA operators and internal behavior
 
 Replication / seed schedule (CRN protocol)
 - Same seed list is used across all individuals inside the same generation.
-- Generations 1-40:
-  - Base evaluation uses K=2 seeds for all individuals.
-- Generations 41+:
-  - Base evaluation still uses K=2 seeds for all individuals.
-  - Top 20% (by 2-seed fitness) are re-evaluated with K=6 seeds.
-  - Those top-20% results replace their base evaluations before selecting generation best.
-- Important consequence:
-  after generation 40, generation-best can come from either:
-  - a 6-seed evaluated individual (typically from top 20%), or
-  - a 2-seed evaluated individual (if it still has lower fitness).
+- All generations:
+  - All individuals are evaluated with K=3 seeds.
+  - No post-evaluation top-percentile refinement is applied.
 
 Terminal line interpretation (per generation)
 - Printed metrics include:
@@ -51,8 +44,7 @@ Terminal line interpretation (per generation)
 - best_seed_scores format:
   [seed_id:fitness_seed, seed_id:fitness_seed, ...]
 - Number of printed seed entries:
-  - 2 entries when best individual has 2-seed evaluation
-  - 6 entries when best individual has 6-seed evaluation
+  - 3 entries (best individual is always evaluated with 3 seeds)
 - Post-phase terminal progress lines:
   - Final validation prints `[FinalVal]` start/progress/end with per-candidate timing and fitness
   - Sensitivity prints `[Sensitivity]` start/progress/end with periodic updates (every 10 bits) and ETA-like remaining estimate
@@ -142,29 +134,30 @@ python "Experiments/Ex1-ShtPath-GA/GA-Experiment1.py" `
   --population 120 `
   --generations 120 `
   --tournament-size 3 `
-  --crossover-prob 0.90 `
+  --crossover-prob 0.85 `
   --elitism 2 `
   --early-stop-patience 20 `
   --invalid-threshold 1000 `
-  --invalid-penalty 10000.0 `
+  --invalid-penalty 10000 `
   --workers 18 `
-  --seed 069 `
+  --seed 690 `
   --log-mode normal `
   --artifact-mode keep_all `
   --eval-mode integrated `
-  --sim-timeout-seconds 360.0 `
-  --python-exe "python" `
+  --sim-command "" `
+  --sim-timeout-seconds 360 `
+  --python-exe "C:\Users\diego\anaconda3\python.exe" `
   --websocket-server-script "./scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py" `
   --godot-exe "godot4" `
   --godot-project-dir "." `
-  --integrated-max-sim-time 15000.0 `
-  --server-start-timeout 20.0 `
+  --integrated-max-sim-time 15000 `
+  --server-start-timeout 20 `
   --tensorboard-port 6007 `
   --tensorboard-host "127.0.0.1" `
   --auto-launch-tensorboard `
   --auto-open-tensorboard-browser `
-  --final-validation-top-k 2 `
-  --final-validation-seeds 2 `
-  --no-run-sensitivity `
+  --final-validation-top-k 5 `
+  --final-validation-seeds 20 `
+  --run-sensitivity `
   --sensitivity-max-bits 0 `
   --run-root "./Experiments/Ex1-ShtPath-GA/ga_runs"
