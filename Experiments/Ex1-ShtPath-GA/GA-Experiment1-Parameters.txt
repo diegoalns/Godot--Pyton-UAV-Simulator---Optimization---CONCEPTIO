@@ -7,6 +7,7 @@ Purpose
 - Decision variables are binary genes mapped to corridor edge groups:
   - 0 -> forward edges
   - 1 -> reverse edges
+- Groups and variable count come from `identify_air_corridor_edge_groups` in Experiments/Ex1-ShtPath-GA/edge_grouping.py (imported by GA-Experiment1.py).
 
 Core objective and validity rules
 - Per-seed fitness contribution:
@@ -21,6 +22,18 @@ Core objective and validity rules
   is_planner_invalid = (planner_invalid_count >= invalid_threshold)
 - Best individual seed dispersion metric:
   best_individual_seed_fitness_std = std(per_seed_fitness list)
+
+GA operators and replacement
+- Tournament selection uses selection scores (minimize); tournament size is `--tournament-size`. Two parents are drawn independently.
+- Uniform crossover with probability `--crossover-prob`; if the uniform draw is >= that value, each child is a copy of its parent (no crossover).
+- Bit-flip mutation per locus with mutation_prob = clip(1 / num_variables, 0.002, 0.03) (function `mutation_probability` in GA-Experiment1.py).
+- Elitism: the `--elitism` individuals with lowest selection score are kept; offspring fill the remainder (population size minus elitism). Next population is elites stacked with offspring, trimmed to `--population`.
+- If `--population` - `--elitism` <= 0 (including population == elitism), replacement is fully elitist: only the elite rows are carried forward (safe path for tiny diagnostic runs).
+
+Early stopping (selection score)
+- Improvement is judged on the generation best normalized selection score `best_individual_selection_score` (not raw fitness alone). The global tracker `best_global_selection_score` updates when that value improves.
+- `no_improve_counter` resets to 0 on improvement; otherwise it increments each generation.
+- Training stops when `no_improve_counter` reaches `--early-stop-patience` (consecutive generations without improvement on best selection score).
 
 Generation metrics schema (generation_metrics.csv)
 - generation
@@ -93,6 +106,15 @@ Final-stage validation and sensitivity
   - one-bit flip sweep over best validated chromosome
   - evaluates delta fitness per bit on held-out seeds
   - bit sweep cap via `--sensitivity-max-bits` (0 means all bits)
+- sensitivity_analysis.csv schema (written when sensitivity runs and at least one row is produced):
+  - bit_index
+  - base_bit
+  - flipped_bit
+  - base_fitness
+  - flipped_fitness
+  - delta_fitness
+  - abs_delta_fitness
+  - is_invalid_after_flip (same meaning as EvalResult.is_invalid / planner-invalid rule used elsewhere)
 
 Cache and parallel evaluation behavior
 - Cache key:
@@ -146,9 +168,10 @@ Run artifacts written by GA-Experiment1.py
 - generation_metrics.csv
 - best_solution.json
 - final_validation_summary.json
-- sensitivity_analysis.csv (written only when sensitivity is enabled)
-- run_config.json
+- sensitivity_analysis.csv (written only when sensitivity is enabled and rows exist)
+- run_config.json: mirrors CLI arguments plus derived fields (e.g. mutation_prob, num_variables, run_id, sensitivity_bit_count_used, base_seed); inspect ga_runs/<run_id>/run_config.json for a concrete example
 - tensorboard/ (event files)
+- tensorboard_process.log (created when TensorBoard auto-launch is used; subprocess log for troubleshooting)
 - terminal_output.txt
 
 Final JSON artifact keys
@@ -171,3 +194,37 @@ Final JSON artifact keys
   - top_k_used
   - heldout_seed_count
   - top_results[] with candidate_* keys
+
+
+  python "Experiments/Ex1-ShtPath-GA/GA-Experiment1.py" `
+  --pickle-file "./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl" `
+  --population 120 `
+  --generations 120 `
+  --tournament-size 3 `
+  --crossover-prob 0.85 `
+  --elitism 2 `
+  --early-stop-patience 20 `
+  --invalid-threshold 1000 `
+  --invalid-penalty 10000 `
+  --workers 18 `
+  --seed 160 `
+  --log-mode normal `
+  --artifact-mode keep_all `
+  --eval-mode integrated `
+  --sim-command "" `
+  --sim-timeout-seconds 360 `
+  --python-exe "python" `
+  --websocket-server-script "./scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py" `
+  --godot-exe "godot4" `
+  --godot-project-dir "." `
+  --integrated-max-sim-time 15000 `
+  --server-start-timeout 20 `
+  --tensorboard-port 6007 `
+  --tensorboard-host "127.0.0.1" `
+  --auto-launch-tensorboard `
+  --auto-open-tensorboard-browser `
+  --final-validation-top-k 5 `
+  --final-validation-seeds 20 `
+  --run-sensitivity `
+  --sensitivity-max-bits 0 `
+  --run-root "./Experiments/Ex1-ShtPath-GA/ga_runs"
