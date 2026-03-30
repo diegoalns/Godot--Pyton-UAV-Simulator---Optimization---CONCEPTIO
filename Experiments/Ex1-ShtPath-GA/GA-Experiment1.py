@@ -1277,7 +1277,6 @@ def main() -> None:
         fitness_values = np.array([x.fitness for x in evals], dtype=float)
         replications = np.array([max(1, int(x.replications)) for x in evals], dtype=float)
         selection_scores = fitness_values / replications
-        invalid_counts = np.array([x.invalid_count for x in evals], dtype=int)
         invalid_flags = np.array([1 if x.is_invalid else 0 for x in evals], dtype=int)
         mean_no_path = float(np.mean([x.no_path_count for x in evals]))
         mean_planner_timeout = float(np.mean([x.timeout_count for x in evals]))
@@ -1286,31 +1285,35 @@ def main() -> None:
         mean_no_valid_route = float(np.mean([x.no_valid_route_count for x in evals]))
 
         gen_best_idx = int(np.argmin(selection_scores))
-        gen_best_selection = float(selection_scores[gen_best_idx])
-        gen_best_fit_raw = float(fitness_values[gen_best_idx])
+        best_individual_selection_score = float(selection_scores[gen_best_idx])
+        best_individual_fitness_raw = float(fitness_values[gen_best_idx])
         gen_best_eval = evals[gen_best_idx]
-        gen_mean_selection = float(np.mean(selection_scores))
-        gen_std_selection = float(np.std(selection_scores))
-        gen_mean_fit_raw = float(np.mean(fitness_values))
-        gen_std_fit_raw = float(np.std(fitness_values))
-        num_invalid = int(np.sum(invalid_flags))
-        best_invalid_count = int(gen_best_eval.invalid_count)
-        best_replication_fitness_std = float(gen_best_eval.replication_fitness_std)
+        population_selection_score_mean = float(np.mean(selection_scores))
+        population_selection_score_std = float(np.std(selection_scores))
+        population_fitness_raw_mean = float(np.mean(fitness_values))
+        population_fitness_raw_std = float(np.std(fitness_values))
+        population_invalid_individuals_count = int(np.sum(invalid_flags))
+        population_size = int(args.population)
+        population_invalid_individuals_ratio = (
+            float(population_invalid_individuals_count / population_size) if population_size > 0 else 0.0
+        )
+        best_individual_planner_invalid_count = int(gen_best_eval.invalid_count)
+        best_individual_seed_fitness_std = float(gen_best_eval.replication_fitness_std)
         best_seed_scores = [float(x) for x in gen_best_eval.per_seed_fitness]
         best_seed_ids = gen_seeds[: len(best_seed_scores)]
         best_seed_scores_str = ",".join(
             f"{int(seed)}:{score:.2f}" for seed, score in zip(best_seed_ids, best_seed_scores)
         )
-        diversity = float(mean_pairwise_hamming(population))
+        population_diversity_hamming_mean = float(mean_pairwise_hamming(population))
 
-        best_bitstring = bitstring_from_array(population[gen_best_idx])
-        best_candidate_archive[best_bitstring] = min(
-            gen_best_selection, best_candidate_archive.get(best_bitstring, float("inf"))
+        best_individual_bitstring = bitstring_from_array(population[gen_best_idx])
+        best_candidate_archive[best_individual_bitstring] = min(
+            best_individual_selection_score, best_candidate_archive.get(best_individual_bitstring, float("inf"))
         )
 
-        if gen_best_selection < best_global_selection_score:
-            best_global_selection_score = gen_best_selection
-            best_global_fitness_raw = gen_best_fit_raw
+        if best_individual_selection_score < best_global_selection_score:
+            best_global_selection_score = best_individual_selection_score
+            best_global_fitness_raw = best_individual_fitness_raw
             best_global_chromosome = population[gen_best_idx].copy()
             best_global_eval = evals[gen_best_idx]
             no_improve_counter = 0
@@ -1320,68 +1323,70 @@ def main() -> None:
         gen_seconds = float(time.time() - gen_start)
         row = {
             "generation": gen,
-            "fitness_best": gen_best_fit_raw,
-            "fitness_best_selection": gen_best_selection,
-            "fitness_best_raw": gen_best_fit_raw,
-            "fitness_mean": gen_mean_fit_raw,
-            "fitness_std": gen_std_fit_raw,
-            "fitness_mean_selection": gen_mean_selection,
-            "fitness_std_selection": gen_std_selection,
-            "fitness_mean_raw": gen_mean_fit_raw,
-            "fitness_std_raw": gen_std_fit_raw,
-            "invalid_best_individual_invalid_count": best_invalid_count,
-            "invalid_num_invalid_individuals": num_invalid,
-            "route_mean_no_path_python": mean_no_path,
-            "route_mean_planner_timeout_python": mean_planner_timeout,
-            "route_mean_server_error_python": mean_server_error,
-            "route_mean_no_response_godot": mean_no_response,
-            "route_mean_no_valid_route_payload_godot": mean_no_valid_route,
-            "ga_diversity_hamming_mean": diversity,
-            "time_generation_seconds": gen_seconds,
-            "k_base": 3,
-            "k_refined_top20": 0,
             "seed_signature_base": seed_signature(base_seeds),
-            "seed_signature_full": seed_signature(gen_seeds),
-            "best_replication_fitness_std": best_replication_fitness_std,
-            "best_seed_fitness_scores": best_seed_scores_str,
+            "generation_seconds": gen_seconds,
+            "best_individual_index": gen_best_idx,
+            "best_individual_bitstring": best_individual_bitstring,
+            "best_individual_replications": int(gen_best_eval.replications),
+            "best_individual_selection_score": best_individual_selection_score,
+            "best_individual_fitness_raw": best_individual_fitness_raw,
+            "best_individual_planner_invalid_count": best_individual_planner_invalid_count,
+            "best_individual_seed_fitness_std": best_individual_seed_fitness_std,
+            "population_size": population_size,
+            "population_selection_score_mean": population_selection_score_mean,
+            "population_selection_score_std": population_selection_score_std,
+            "population_fitness_raw_mean": population_fitness_raw_mean,
+            "population_fitness_raw_std": population_fitness_raw_std,
+            "population_invalid_individuals_count": population_invalid_individuals_count,
+            "population_invalid_individuals_ratio": population_invalid_individuals_ratio,
+            "population_diversity_hamming_mean": population_diversity_hamming_mean,
+            "population_no_path_count_mean": mean_no_path,
+            "population_planner_timeout_count_mean": mean_planner_timeout,
+            "population_server_error_count_mean": mean_server_error,
+            "population_no_response_count_mean": mean_no_response,
+            "population_no_valid_route_count_mean": mean_no_valid_route,
         }
         generation_rows.append(row)
 
-        writer.add_scalar("fitness/best", gen_best_fit_raw, gen)
-        writer.add_scalar("fitness/best_selection", gen_best_selection, gen)
-        writer.add_scalar("fitness/best_raw", gen_best_fit_raw, gen)
-        writer.add_scalar("fitness/mean", gen_mean_fit_raw, gen)
-        writer.add_scalar("fitness/mean_selection", gen_mean_selection, gen)
-        writer.add_scalar("fitness/mean_raw", gen_mean_fit_raw, gen)
-        writer.add_scalar("fitness/std", gen_std_fit_raw, gen)
-        writer.add_scalar("fitness/std_selection", gen_std_selection, gen)
-        writer.add_scalar("fitness/std_raw", gen_std_fit_raw, gen)
-        writer.add_scalar("invalid/best_individual_invalid_count", best_invalid_count, gen)
-        writer.add_scalar("invalid/num_invalid_individuals", num_invalid, gen)
-        writer.add_scalar("route/mean_no_path_python", mean_no_path, gen)
-        writer.add_scalar("route/mean_planner_timeout_python", mean_planner_timeout, gen)
-        writer.add_scalar("route/mean_server_error_python", mean_server_error, gen)
-        writer.add_scalar("route/mean_no_response_godot", mean_no_response, gen)
-        writer.add_scalar("route/mean_no_valid_route_payload_godot", mean_no_valid_route, gen)
-        writer.add_scalar("ga/diversity_hamming_mean", diversity, gen)
-        writer.add_scalar("time/generation_seconds", gen_seconds, gen)
+        writer.add_scalar("best_individual/selection_score", best_individual_selection_score, gen)
+        writer.add_scalar("best_individual/fitness_raw", best_individual_fitness_raw, gen)
+        writer.add_scalar("best_individual/planner_invalid_count", best_individual_planner_invalid_count, gen)
+        writer.add_scalar("best_individual/seed_fitness_std", best_individual_seed_fitness_std, gen)
+        writer.add_scalar("population/selection_score_mean", population_selection_score_mean, gen)
+        writer.add_scalar("population/selection_score_std", population_selection_score_std, gen)
+        writer.add_scalar("population/fitness_raw_mean", population_fitness_raw_mean, gen)
+        writer.add_scalar("population/fitness_raw_std", population_fitness_raw_std, gen)
+        writer.add_scalar("population/invalid_individuals_count", population_invalid_individuals_count, gen)
+        writer.add_scalar("population/invalid_individuals_ratio", population_invalid_individuals_ratio, gen)
+        writer.add_scalar("population/diversity_hamming_mean", population_diversity_hamming_mean, gen)
+        writer.add_scalar("population/no_path_count_mean", mean_no_path, gen)
+        writer.add_scalar("population/planner_timeout_count_mean", mean_planner_timeout, gen)
+        writer.add_scalar("population/server_error_count_mean", mean_server_error, gen)
+        writer.add_scalar("population/no_response_count_mean", mean_no_response, gen)
+        writer.add_scalar("population/no_valid_route_count_mean", mean_no_valid_route, gen)
+        writer.add_scalar("generation/seconds", gen_seconds, gen)
         writer.flush()
 
         mode_settings = resolve_log_mode_settings(args.log_mode)
         should_print_gen_line = bool(mode_settings["print_every_generation"]) or gen == 1 or gen % 10 == 0
         if should_print_gen_line:
             print(
-                f"[Gen {gen:03d}] best_sel={gen_best_selection:.4f} best_raw={gen_best_fit_raw:.4f} "
-                f"mean_sel={gen_mean_selection:.4f} std_sel={gen_std_selection:.4f} "
-                f"invalid={num_invalid}/{args.population} "
-                f"mean_no_path_py={mean_no_path:.2f} "
-                f"mean_timeout_py={mean_planner_timeout:.2f} "
-                f"mean_error_py={mean_server_error:.2f} "
-                f"mean_no_resp_gd={mean_no_response:.2f} "
-                f"mean_no_valid_gd={mean_no_valid_route:.2f} "
+                f"[Gen {gen:03d}] "
+                f"best_sel={best_individual_selection_score:.4f} "
+                f"best_raw={best_individual_fitness_raw:.4f} "
+                f"best_planner_invalid={best_individual_planner_invalid_count} "
+                f"best_seed_std={best_individual_seed_fitness_std:.4f} "
+                f"pop_sel_mean={population_selection_score_mean:.4f} "
+                f"pop_sel_std={population_selection_score_std:.4f} "
+                f"pop_invalid={population_invalid_individuals_count}/{population_size} "
+                f"pop_no_path_mean={mean_no_path:.2f} "
+                f"pop_timeout_mean={mean_planner_timeout:.2f} "
+                f"pop_server_error_mean={mean_server_error:.2f} "
+                f"pop_no_resp_mean={mean_no_response:.2f} "
+                f"pop_no_valid_route_mean={mean_no_valid_route:.2f} "
                 f"best_seed_scores=[{best_seed_scores_str}] "
-                f"best_rep_std={best_replication_fitness_std:.4f} "
-                f"diversity={diversity:.4f} t={gen_seconds:.2f}s"
+                f"pop_diversity={population_diversity_hamming_mean:.4f} "
+                f"gen_s={gen_seconds:.2f}"
             )
 
         if no_improve_counter >= args.early_stop_patience:
@@ -1465,30 +1470,30 @@ def main() -> None:
         )
         final_validation.append(
             {
-                "bitstring": bitstring,
-                "fitness": res.fitness,
-                "mean_collisions": res.mean_collisions,
-                "no_path_count": res.no_path_count,
-                "timeout_count": res.timeout_count,
-                "server_error_count": res.server_error_count,
-                "no_response_count": res.no_response_count,
-                "no_valid_route_count": res.no_valid_route_count,
-                "invalid_count": res.invalid_count,
-                "is_invalid": res.is_invalid,
-                "replications": res.replications,
-                "seed_signature": heldout_sig,
+                "candidate_bitstring": bitstring,
+                "candidate_fitness_raw": res.fitness,
+                "candidate_mean_collisions": res.mean_collisions,
+                "candidate_no_path_count": res.no_path_count,
+                "candidate_planner_timeout_count": res.timeout_count,
+                "candidate_server_error_count": res.server_error_count,
+                "candidate_no_response_count": res.no_response_count,
+                "candidate_no_valid_route_count": res.no_valid_route_count,
+                "candidate_planner_invalid_count": res.invalid_count,
+                "candidate_is_planner_invalid": res.is_invalid,
+                "candidate_replications": res.replications,
+                "candidate_seed_signature": heldout_sig,
             }
         )
         cand_elapsed = float(time.time() - cand_start)
         print(
             f"[FinalVal {cand_i:03d}/{top_k:03d}] fit={res.fitness:.4f} "
-            f"invalid={res.invalid_count} bits={bitstring[:16]}... t={cand_elapsed:.2f}s"
+            f"planner_invalid={res.invalid_count} bits={bitstring[:16]}... t={cand_elapsed:.2f}s"
         )
-    final_validation.sort(key=lambda x: float(x["fitness"]))
+    final_validation.sort(key=lambda x: float(x["candidate_fitness_raw"]))
     best_validated = final_validation[0]
-    best_validated_bits = np.array([int(ch) for ch in best_validated["bitstring"]], dtype=np.int8)
+    best_validated_bits = np.array([int(ch) for ch in best_validated["candidate_bitstring"]], dtype=np.int8)
     print(
-        f"[FinalVal] done best_fit={float(best_validated['fitness']):.4f} "
+        f"[FinalVal] done best_fit={float(best_validated['candidate_fitness_raw']):.4f} "
         f"elapsed={float(time.time() - final_val_start):.2f}s"
     )
 
@@ -1581,13 +1586,18 @@ def main() -> None:
     with best_solution_path.open("w", encoding="utf-8") as f:
         json.dump(
             {
-                "bitstring": best_validated["bitstring"],
-                "chromosome": [int(ch) for ch in best_validated["bitstring"]],
-                "best_fitness": float(best_validated["fitness"]),
-                "mean_collisions": float(best_validated["mean_collisions"]),
-                "invalid_count": int(best_validated["invalid_count"]),
-                "replications": int(best_validated["replications"]),
-                "seed_signature": best_validated["seed_signature"],
+                "best_individual_bitstring": best_validated["candidate_bitstring"],
+                "best_individual_chromosome": [int(ch) for ch in best_validated["candidate_bitstring"]],
+                "best_individual_fitness_raw": float(best_validated["candidate_fitness_raw"]),
+                "best_individual_mean_collisions": float(best_validated["candidate_mean_collisions"]),
+                "best_individual_no_path_count": int(best_validated["candidate_no_path_count"]),
+                "best_individual_planner_timeout_count": int(best_validated["candidate_planner_timeout_count"]),
+                "best_individual_planner_invalid_count": int(best_validated["candidate_planner_invalid_count"]),
+                "best_individual_server_error_count": int(best_validated["candidate_server_error_count"]),
+                "best_individual_no_response_count": int(best_validated["candidate_no_response_count"]),
+                "best_individual_no_valid_route_count": int(best_validated["candidate_no_valid_route_count"]),
+                "best_individual_replications": int(best_validated["candidate_replications"]),
+                "seed_signature_heldout": best_validated["candidate_seed_signature"],
             },
             f,
             indent=2,
@@ -1596,14 +1606,12 @@ def main() -> None:
     final_validation_path = run_dir / "final_validation_summary.json"
     with final_validation_path.open("w", encoding="utf-8") as f:
         summary = {
-            "heldout_seed_signature": heldout_sig,
+            "seed_signature_heldout": heldout_sig,
             "top_k_requested": int(args.final_validation_top_k),
             "top_k_used": int(top_k),
-            "heldout_seeds_count": int(len(heldout_seeds)),
+            "heldout_seed_count": int(len(heldout_seeds)),
             "top_results": final_validation,
         }
-        if int(top_k) == 5:
-            summary["top5_results"] = final_validation
         json.dump(
             summary,
             f,
@@ -1667,11 +1675,11 @@ def main() -> None:
     print("=" * 88)
     print("GA EXPERIMENT COMPLETE")
     print("=" * 88)
-    print(f"Best GA selection score: {best_global_selection_score:.6f}")
-    print(f"Best GA raw fitness: {best_global_fitness_raw:.6f}")
+    print(f"Best GA best_individual_selection_score: {best_global_selection_score:.6f}")
+    print(f"Best GA best_individual_fitness_raw: {best_global_fitness_raw:.6f}")
     print(f"Run directory: {run_dir}")
-    print(f"Best fitness: {best_validated['fitness']}")
-    print(f"Best chromosome bitstring: {best_validated['bitstring']}")
+    print(f"Final validated best_individual_fitness_raw: {best_validated['candidate_fitness_raw']}")
+    print(f"Final validated best_individual_bitstring: {best_validated['candidate_bitstring']}")
     print(f"Generation metrics CSV: {generation_csv}")
     print(f"Final validation summary: {final_validation_path}")
     if args.run_sensitivity and sensitivity_rows:

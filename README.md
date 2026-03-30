@@ -383,7 +383,7 @@ Recommended rules:
   - Final validation: top `--final-validation-top-k` candidates at held-out `k=--final-validation-seeds`
 - **Selection metric**:
   - GA parent selection, elitism, generation-best tracking, and early-stop improvement checks use normalized fitness (`fitness / replications`) so selection remains per-replication comparable.
-  - Raw objective sum (`sum(collisions) + no_path_count + timeout_count`) is still logged for analysis and backward compatibility.
+  - Raw objective sum (`sum(collisions) + no_path_count + timeout_count`) is logged as `best_individual_fitness_raw` and `population_fitness_raw_*`.
 - **Post-processing controls** (for faster integrated smoke checks):
   - `--final-validation-top-k` (default `5`)
   - `--final-validation-seeds` (default `20`)
@@ -410,23 +410,24 @@ Recommended rules:
   - `keep_failures`: delete successful `rep_*` folders, keep only reps with route-failure counters > 0
   - `minimal`: keep only `python_server.log`, `godot.log`, `collision_log.csv`, `python_routes_received.csv`, and `godot_summary.json`
 - **Logging/outputs**:
-  - TensorBoard per-generation live metrics (`fitness/*`, `invalid/*`, `ga/diversity_hamming_mean`, `time/generation_seconds`) in all modes
-  - Terminal generation line now also prints mean route-failure components:
-    - `mean_no_path_py` (Python planner no-path)
-    - `mean_timeout_py` (Python planner timeout)
-    - `mean_error_py` (Python server-side validation/processing errors)
-    - `mean_no_resp_gd` (Godot-side no response received in time)
-    - `mean_no_valid_gd` (Godot-side response missing valid route payload)
-    - `best_seed_scores` (best individual's per-seed fitness as `seed:score`)
-    - `best_rep_std` (standard deviation of best individual's per-seed fitness scores)
+  - TensorBoard per-generation live metrics now use explicit namespaces:
+    - `best_individual/*` (selection/raw/planner-invalid/seed-std)
+    - `population/*` (selection/raw aggregates, invalid ratio, route-failure means, diversity)
+    - `generation/seconds`
+  - Terminal generation line uses the same explicit naming model:
+    - best individual: `best_sel`, `best_raw`, `best_planner_invalid`, `best_seed_std`
+    - population: `pop_sel_mean`, `pop_sel_std`, `pop_invalid`, route-failure means, `pop_diversity`
+    - debug context: `best_seed_scores` (best individual's per-seed fitness as `seed:score`)
   - Terminal output now includes post-phase progress lines so long final steps are observable:
     - `[FinalVal ...]` start/progress/end for held-out candidate validation
     - `[Sensitivity ...]` start/progress/end (periodic progress every 10 bits, plus skip message when disabled)
   - `generation_metrics.csv`
-    - includes `best_seed_fitness_scores` and `best_replication_fitness_std` per generation
-    - includes both raw and normalized fitness columns (`fitness_*_raw` and `fitness_*_selection`) for objective/selection auditability
+    - uses explicit schema with `best_individual_*`, `population_*`, `generation_seconds`, `seed_signature_base`
+    - includes `best_individual_seed_fitness_std` (seed-level variability of the best individual)
   - `best_solution.json`
+    - uses explicit final keys (`best_individual_*`, `seed_signature_heldout`)
   - `final_validation_summary.json`
+    - uses explicit candidate keys in `top_results` (`candidate_*`) and held-out seed metadata
   - `sensitivity_analysis.csv` (only when sensitivity is enabled)
   - `terminal_output.txt` (mirrored GA terminal stdout/stderr)
 - **Integrated run mode (default)**:
@@ -550,7 +551,7 @@ python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" \
 
 ---
 
-**Last Updated**: 2026-03-21 - Added tailored `.gitignore` policy for GitHub publishing and generated artifact hygiene
+**Last Updated**: 2026-03-30 - Updated GA Experiment 1 metrics schema to explicit best_individual/population naming across CSV, TensorBoard, and final artifacts
 **Godot Version**: 4.3 (GL Compatibility)
 **Python Version**: 3.8+
 

@@ -1,6 +1,6 @@
-GA-Experiment1 Parameter Reference
+GA-Experiment1 Parameter and Metrics Reference
 Source of truth: Experiments/Ex1-ShtPath-GA/GA-Experiment1.py
-Generated: 2026-03-22
+Generated: 2026-03-30
 
 Purpose
 - Simulation-based binary Genetic Algorithm (GA) for air-corridor edge orientation optimization.
@@ -11,44 +11,76 @@ Purpose
 Core objective and validity rules
 - Per-seed fitness contribution:
   fitness_seed = collisions + no_path_count + timeout_count
-- Chromosome fitness over K seeds:
-  fitness = sum(collisions over seeds) + sum(no_path_count over seeds) + sum(timeout_count over seeds)
-- Invalid-pressure metric:
-  invalid_count = no_path_count + timeout_count
-- Invalid flag:
-  is_invalid = (invalid_count >= invalid_threshold)
-- Best-individual replication dispersion metric:
-  best_rep_std = std(per_seed_fitness list)
+- Individual raw fitness over K seeds:
+  fitness_raw = sum(collisions over seeds) + sum(no_path_count over seeds) + sum(timeout_count over seeds)
+- Individual selection score:
+  selection_score = fitness_raw / replications
+- Planner-invalid pressure metric:
+  planner_invalid_count = no_path_count + timeout_count
+- Planner-invalid flag:
+  is_planner_invalid = (planner_invalid_count >= invalid_threshold)
+- Best individual seed dispersion metric:
+  best_individual_seed_fitness_std = std(per_seed_fitness list)
 
-GA operators and internal behavior
-- Selection: tournament selection (size = --tournament-size), minimizing fitness.
-- Crossover: uniform crossover with probability --crossover-prob.
-- Mutation: bit-flip mutation per gene with:
-  mutation_prob = clip(1 / num_variables, 0.002, 0.03)
-- Replacement: elitist generational replacement.
-  - elites = best --elitism individuals
-  - offspring count = population - elitism
-  - safe fully-elitist carry-over when offspring count <= 0
-- Early stopping:
-  stop when no global-best fitness improvement for --early-stop-patience generations.
+Generation metrics schema (generation_metrics.csv)
+- generation
+- seed_signature_base
+- generation_seconds
+- best_individual_index
+- best_individual_bitstring
+- best_individual_replications
+- best_individual_selection_score
+- best_individual_fitness_raw
+- best_individual_planner_invalid_count
+- best_individual_seed_fitness_std
+- population_size
+- population_selection_score_mean
+- population_selection_score_std
+- population_fitness_raw_mean
+- population_fitness_raw_std
+- population_invalid_individuals_count
+- population_invalid_individuals_ratio
+- population_diversity_hamming_mean
+- population_no_path_count_mean
+- population_planner_timeout_count_mean
+- population_server_error_count_mean
+- population_no_response_count_mean
+- population_no_valid_route_count_mean
 
-Replication / seed schedule (CRN protocol)
-- Same seed list is used across all individuals inside the same generation.
-- All generations:
-  - All individuals are evaluated with K=3 seeds.
-  - No post-evaluation top-percentile refinement is applied.
+TensorBoard scalar tags (per generation)
+- best_individual/selection_score
+- best_individual/fitness_raw
+- best_individual/planner_invalid_count
+- best_individual/seed_fitness_std
+- population/selection_score_mean
+- population/selection_score_std
+- population/fitness_raw_mean
+- population/fitness_raw_std
+- population/invalid_individuals_count
+- population/invalid_individuals_ratio
+- population/diversity_hamming_mean
+- population/no_path_count_mean
+- population/planner_timeout_count_mean
+- population/server_error_count_mean
+- population/no_response_count_mean
+- population/no_valid_route_count_mean
+- generation/seconds
 
 Terminal line interpretation (per generation)
 - Printed metrics include:
-  best, mean, std, invalid count, route-failure means, best_seed_scores, best_rep_std, diversity, generation time.
-- best_seed_scores format:
-  [seed_id:fitness_seed, seed_id:fitness_seed, ...]
-- Number of printed seed entries:
-  - 3 entries (best individual is always evaluated with 3 seeds)
-- Post-phase terminal progress lines:
-  - Final validation prints `[FinalVal]` start/progress/end with per-candidate timing and fitness
-  - Sensitivity prints `[Sensitivity]` start/progress/end with periodic updates (every 10 bits) and ETA-like remaining estimate
-  - If sensitivity is disabled, prints explicit skipped message
+  - best individual selection/raw/planner-invalid/seed-std
+  - population selection mean/std
+  - population invalid count ratio
+  - population route-failure component means
+  - population diversity
+  - generation wall time
+  - best seed scores as seed:score list
+
+Replication / seed schedule (CRN protocol)
+- Same seed list is used across all individuals inside a generation.
+- All generations:
+  - All individuals are evaluated with K=3 seeds.
+  - No top-percentile refinement phase is applied.
 
 Final-stage validation and sensitivity
 - Candidate set: final population + global-best archive candidate.
@@ -80,6 +112,8 @@ Command-line parameters (defaults)
 - --invalid-penalty: 10000.0
 - --workers: 18
 - --seed: 160
+- --log-mode: normal (choices: quiet, normal, verbose)
+- --artifact-mode: keep_all (choices: keep_all, keep_failures, minimal)
 - --eval-mode: integrated (choices: integrated, command, mock)
 - --sim-command: "" (required when --eval-mode=command)
 - --sim-timeout-seconds: 360.0
@@ -117,47 +151,23 @@ Run artifacts written by GA-Experiment1.py
 - tensorboard/ (event files)
 - terminal_output.txt
 
-
-Notes
-
---log-mode: quiet | normal | verbose
---artifact-mode: keep_all | keep_failures | minimal
---eval-mode: integrated | command | mock
-For --eval-mode command, set a real --sim-command (non-empty).
-TensorBoard: use --no-auto-launch-tensorboard and --no-auto-open-tensorboard-browser instead of the positive flags if you want them off.
-Sensitivity: use --no-run-sensitivity to disable; --sensitivity-max-bits 0 means all bits.
-Point --python-exe at your interpreter if needed (e.g. full path to python.exe).
-One-line variant (same args, no backticks):
-
-python "Experiments/Ex1-ShtPath-GA/GA-Experiment1.py" `
-  --pickle-file "./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl" `
-  --population 120 `
-  --generations 120 `
-  --tournament-size 3 `
-  --crossover-prob 0.85 `
-  --elitism 2 `
-  --early-stop-patience 20 `
-  --invalid-threshold 1000 `
-  --invalid-penalty 10000 `
-  --workers 18 `
-  --seed 690 `
-  --log-mode normal `
-  --artifact-mode keep_all `
-  --eval-mode integrated `
-  --sim-command "" `
-  --sim-timeout-seconds 360 `
-  --python-exe "C:\Users\diego\anaconda3\python.exe" `
-  --websocket-server-script "./scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py" `
-  --godot-exe "godot4" `
-  --godot-project-dir "." `
-  --integrated-max-sim-time 15000 `
-  --server-start-timeout 20 `
-  --tensorboard-port 6007 `
-  --tensorboard-host "127.0.0.1" `
-  --auto-launch-tensorboard `
-  --auto-open-tensorboard-browser `
-  --final-validation-top-k 5 `
-  --final-validation-seeds 20 `
-  --run-sensitivity `
-  --sensitivity-max-bits 0 `
-  --run-root "./Experiments/Ex1-ShtPath-GA/ga_runs"
+Final JSON artifact keys
+- best_solution.json:
+  - best_individual_bitstring
+  - best_individual_chromosome
+  - best_individual_fitness_raw
+  - best_individual_mean_collisions
+  - best_individual_no_path_count
+  - best_individual_planner_timeout_count
+  - best_individual_planner_invalid_count
+  - best_individual_server_error_count
+  - best_individual_no_response_count
+  - best_individual_no_valid_route_count
+  - best_individual_replications
+  - seed_signature_heldout
+- final_validation_summary.json:
+  - seed_signature_heldout
+  - top_k_requested
+  - top_k_used
+  - heldout_seed_count
+  - top_results[] with candidate_* keys
