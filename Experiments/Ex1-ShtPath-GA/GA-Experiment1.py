@@ -1104,6 +1104,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--auto-open-tensorboard-browser", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--final-validation-top-k", type=int, default=5)
     parser.add_argument("--final-validation-seeds", type=int, default=20)
+    parser.add_argument("--generation-seeds", type=int, default=3)
     parser.add_argument("--run-sensitivity", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
         "--sensitivity-max-bits",
@@ -1133,6 +1134,8 @@ def main() -> None:
         raise ValueError("--final-validation-top-k must be >= 1.")
     if args.final_validation_seeds < 1:
         raise ValueError("--final-validation-seeds must be >= 1.")
+    if args.generation_seeds < 1:
+        raise ValueError("--generation-seeds must be >= 1.")
     if args.sensitivity_max_bits < 0:
         raise ValueError("--sensitivity-max-bits must be >= 0.")
 
@@ -1258,9 +1261,9 @@ def main() -> None:
     # 3) Evolution loop.
     for gen in range(1, args.generations + 1):
         gen_start = time.time()
-        max_k = 3
+        max_k = int(args.generation_seeds)
         gen_seeds = build_generation_seed_list(base_seed=args.seed, generation=gen, max_k=max_k)
-        base_seeds = gen_seeds[:3]
+        base_seeds = gen_seeds
 
         evals = evaluate_population_batch(
             chromosomes=population,
@@ -1654,6 +1657,7 @@ def main() -> None:
                 "auto_open_tensorboard_browser": args.auto_open_tensorboard_browser,
                 "final_validation_top_k": args.final_validation_top_k,
                 "final_validation_seeds": args.final_validation_seeds,
+                "generation_seeds": args.generation_seeds,
                 "run_sensitivity": args.run_sensitivity,
                 "sensitivity_max_bits": args.sensitivity_max_bits,
                 "sensitivity_bit_count_used": sensitivity_bit_count_used,

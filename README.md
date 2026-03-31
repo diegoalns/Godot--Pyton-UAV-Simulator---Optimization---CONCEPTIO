@@ -379,12 +379,13 @@ Recommended rules:
 - **Objective**: minimize `sum(collisions) + no_path_count + timeout_count` from simulation outcomes
 - **Invalid handling**: chromosome evaluation still flags invalid when `no_path_count + timeout_count >= 1000`, but fitness is now computed from the objective sum above
 - **Replication schedule**:
-  - All generations: `k=3` for all individuals
+  - All generations: `k=--generation-seeds` for all individuals (default `3`)
   - Final validation: top `--final-validation-top-k` candidates at held-out `k=--final-validation-seeds`
 - **Selection metric**:
   - GA parent selection, elitism, generation-best tracking, and early-stop improvement checks use normalized fitness (`fitness / replications`) so selection remains per-replication comparable.
   - Raw objective sum (`sum(collisions) + no_path_count + timeout_count`) is logged as `best_individual_fitness_raw` and `population_fitness_raw_*`.
 - **Post-processing controls** (for faster integrated smoke checks):
+  - `--generation-seeds` (default `3`)
   - `--final-validation-top-k` (default `5`)
   - `--final-validation-seeds` (default `20`)
   - `--run-sensitivity/--no-run-sensitivity` (default enabled)
@@ -395,6 +396,7 @@ Recommended rules:
   - `population >= 2`
   - `0 <= elitism <= population`
   - `workers >= 1`
+  - `generation-seeds >= 1`
   - `final-validation-top-k >= 1`
   - `final-validation-seeds >= 1`
   - `sensitivity-max-bits >= 0`
@@ -551,7 +553,7 @@ python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" \
 
 ---
 
-**Last Updated**: 2026-03-30 - Updated GA Experiment 1 metrics schema to explicit best_individual/population naming across CSV, TensorBoard, and final artifacts
+**Last Updated**: 2026-03-31 - Added `--generation-seeds` to make GA per-generation replication count configurable (default `3`)
 **Godot Version**: 4.3 (GL Compatibility)
 **Python Version**: 3.8+
 

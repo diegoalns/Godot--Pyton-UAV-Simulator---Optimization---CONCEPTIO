@@ -624,7 +624,7 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 - Loads lattice graph and builds corridor-group variables using the same grouping logic as `Visualize_Air_Corridor_Binary_Edge_Selection_updated.py`
 - Uses contiguous air-corridor segment grouping (layer + axis + fixed index + segment ID) with forward/reverse sets split by grid-direction sign
 - Represents one chromosome as a full binary orientation vector across all groups
-- Evaluates chromosomes with common random numbers per generation (shared seed set)
+- Evaluates chromosomes with common random numbers per generation (shared seed set, size controlled by `--generation-seeds`, default `3`)
 - Computes fitness as `sum(collisions) + no_path_count + timeout_count` across replications
 - Uses normalized selection score (`fitness / replications`) for generation-best choice, elitism ordering, tournament parent selection, and early-stop improvement checks so selection remains per-replication comparable
 - Tracks route-failure components per chromosome evaluation:
@@ -639,13 +639,14 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 - Evaluates chromosome batches in parallel with a thread pool (`--workers`, default `18`) and cache-aware de-duplication
 - Executes GA operators: tournament selection, uniform crossover, bit-flip mutation, elitism, generational replacement
 - Enforces GA runtime guards for stability in small diagnostics (`population >= 2`, `0 <= elitism <= population`, `workers >= 1`)
-- Enforces post-phase guardrails (`final_validation_top_k >= 1`, `final_validation_seeds >= 1`, `sensitivity_max_bits >= 0`)
+- Enforces GA/post-phase guardrails (`generation_seeds >= 1`, `final_validation_top_k >= 1`, `final_validation_seeds >= 1`, `sensitivity_max_bits >= 0`)
 - Supports a safe fully-elitist generation step when `population == elitism` (no offspring phase)
 - GA default configuration now uses `population=120` (CLI override still supported)
 - Ex2 variant at `Experiments/Ex2-ShtPath-GA 16 Workers/GA-Experiment1.py` defaults to `workers=16`
 - Supports early stopping when no best-fitness improvement occurs for a fixed patience window
 - Performs configurable final held-out validation (`--final-validation-top-k`, `--final-validation-seeds`) and optional one-bit sensitivity analysis (`--run-sensitivity`, `--sensitivity-max-bits`) from the best chromosome
 - Exposes post-phase scaling controls for integrated testing and diagnostics:
+  - `--generation-seeds`
   - `--final-validation-top-k`
   - `--final-validation-seeds`
   - `--run-sensitivity/--no-run-sensitivity`
@@ -1083,6 +1084,6 @@ Both simulation time and system clock time are tracked for:
 
 ---
 
-**Last Updated**: 2026-03-30 - Updated GA Experiment 1 metrics schema to explicit best_individual/population and candidate/final artifact naming
+**Last Updated**: 2026-03-31 - Added configurable GA generation seed count via `--generation-seeds` and updated guardrails/docs
 **Documentation Version**: 1.8
 

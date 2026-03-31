@@ -1,6 +1,6 @@
 GA-Experiment1 Parameter and Metrics Reference
 Source of truth: Experiments/Ex1-ShtPath-GA/GA-Experiment1.py
-Generated: 2026-03-30
+Generated: 2026-03-31
 
 Purpose
 - Simulation-based binary Genetic Algorithm (GA) for air-corridor edge orientation optimization.
@@ -92,7 +92,7 @@ Terminal line interpretation (per generation)
 Replication / seed schedule (CRN protocol)
 - Same seed list is used across all individuals inside a generation.
 - All generations:
-  - All individuals are evaluated with K=3 seeds.
+  - All individuals are evaluated with K=`--generation-seeds` (default 3).
   - No top-percentile refinement phase is applied.
 
 Final-stage validation and sensitivity
@@ -151,6 +151,7 @@ Command-line parameters (defaults)
 - --auto-open-tensorboard-browser / --no-auto-open-tensorboard-browser: default true
 - --final-validation-top-k: 5
 - --final-validation-seeds: 20
+- --generation-seeds: 3
 - --run-sensitivity / --no-run-sensitivity: default true
 - --sensitivity-max-bits: 0
 - --run-root: ./Experiments/Ex1-ShtPath-GA/ga_runs
@@ -161,6 +162,7 @@ Runtime guards
 - workers >= 1
 - final-validation-top-k >= 1
 - final-validation-seeds >= 1
+- generation-seeds >= 1
 - sensitivity-max-bits >= 0
 - For eval-mode=command, sim-command must be provided.
 
@@ -207,7 +209,8 @@ Final JSON artifact keys
   --invalid-threshold 1000 `
   --invalid-penalty 10000 `
   --workers 18 `
-  --seed 160 `
+  --seed 1170 `
+  --generation-seeds: 3 `
   --log-mode normal `
   --artifact-mode keep_all `
   --eval-mode integrated `
@@ -224,7 +227,8 @@ Final JSON artifact keys
   --auto-launch-tensorboard `
   --auto-open-tensorboard-browser `
   --final-validation-top-k 5 `
-  --final-validation-seeds 20 `
-  --run-sensitivity `
+  --final-validation-seeds 3 `
+  --generation-seeds 3 `
+  --no-run-sensitivity `
   --sensitivity-max-bits 0 `
   --run-root "./Experiments/Ex1-ShtPath-GA/ga_runs"
