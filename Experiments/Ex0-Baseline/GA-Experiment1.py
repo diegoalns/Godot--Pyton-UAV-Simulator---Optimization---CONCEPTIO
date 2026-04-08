@@ -883,7 +883,7 @@ def parse_args() -> argparse.Namespace:
             "The command should emit/produce JSON with collisions, no_path_count, timeout_count."
         ),
     )
-    parser.add_argument("--sim-timeout-seconds", type=float, default=360.0)
+    parser.add_argument("--sim-timeout-seconds", type=float, default=800.0)
     parser.add_argument("--python-exe", type=str, default=sys.executable)
     parser.add_argument(
         "--websocket-server-script",

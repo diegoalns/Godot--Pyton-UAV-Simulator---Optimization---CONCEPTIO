@@ -103,7 +103,7 @@ func _on_headless_mode_changed(enabled: bool):
 	visualization_system.set_enabled(!enabled)
 	
 func _physics_process(delta: float):
-	Engine.physics_ticks_per_second = 300  # Set to 300 physics FPS
+	Engine.physics_ticks_per_second = 300  # Set to 50 physics FPS
 	if not running:
 		return
 		

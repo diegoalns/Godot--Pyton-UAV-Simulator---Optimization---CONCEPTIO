@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
         default="./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl",
     )
     parser.add_argument("--replications", type=int, default=100)
-    parser.add_argument("--workers", type=int, default=18)
+    parser.add_argument("--workers", type=int, default=10)
     parser.add_argument("--seed", type=int, default=42)
 
     # Keep evaluator options aligned with GA-Experiment1.py.
@@ -79,7 +79,7 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Used when --eval-mode=command. Supports {seed}, {input_json}, {output_json}.",
     )
-    parser.add_argument("--sim-timeout-seconds", type=float, default=360.0)
+    parser.add_argument("--sim-timeout-seconds", type=float, default=800.0)
     parser.add_argument("--python-exe", type=str, default=sys.executable)
     parser.add_argument(
         "--websocket-server-script",

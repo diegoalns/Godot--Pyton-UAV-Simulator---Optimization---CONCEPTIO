@@ -1060,11 +1060,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--generations", type=int, default=120)
     parser.add_argument("--tournament-size", type=int, default=3)
     parser.add_argument("--crossover-prob", type=float, default=0.85)
+    parser.add_argument(
+        "--mutation-prob",
+        type=float,
+        default=0.03,
+        help="Per-bit mutation probability for bit-flip mutation. Must be in [0.0, 1.0].",
+    )
     parser.add_argument("--elitism", type=int, default=2)
     parser.add_argument("--early-stop-patience", type=int, default=20)
     parser.add_argument("--invalid-threshold", type=int, default=1000)
     parser.add_argument("--invalid-penalty", type=float, default=10000.0)
-    parser.add_argument("--workers", type=int, default=18)
+    parser.add_argument("--workers", type=int, default=10)
     parser.add_argument("--seed", type=int, default=160)
     parser.add_argument("--log-mode", type=str, default="normal", choices=list(LOG_MODE_CHOICES))
     parser.add_argument(
@@ -1087,7 +1093,7 @@ def parse_args() -> argparse.Namespace:
             "The command should emit/produce JSON with collisions, no_path_count, timeout_count."
         ),
     )
-    parser.add_argument("--sim-timeout-seconds", type=float, default=360.0)
+    parser.add_argument("--sim-timeout-seconds", type=float, default=800.0)
     parser.add_argument("--python-exe", type=str, default=sys.executable)
     parser.add_argument(
         "--websocket-server-script",
@@ -1128,6 +1134,8 @@ def main() -> None:
         raise ValueError("--elitism must be <= --population.")
     if args.workers < 1:
         raise ValueError("--workers must be >= 1.")
+    if not (0.0 <= args.mutation_prob <= 1.0):
+        raise ValueError("--mutation-prob must be in [0.0, 1.0].")
     assert args.log_mode in LOG_MODE_CHOICES
     assert args.artifact_mode in ARTIFACT_MODE_CHOICES
     if args.final_validation_top_k < 1:
@@ -1223,9 +1231,9 @@ def main() -> None:
     if num_variables <= 0:
         raise RuntimeError("No air-corridor variables found; cannot run GA.")
 
-    mut_p = mutation_probability(num_variables)
+    mut_p = float(args.mutation_prob)
     print(f"Variables (chromosome length): {num_variables}")
-    print(f"Mutation probability (per-bit): {mut_p:.6f}")
+    print(f"Mutation probability (per-bit, configured): {mut_p:.6f}")
     print(f"Evaluation workers: {args.workers}")
 
     # 2) Initialize GA state.

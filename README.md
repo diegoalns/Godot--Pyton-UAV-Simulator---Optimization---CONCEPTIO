@@ -376,6 +376,7 @@ Recommended rules:
 - **Grouping source**: uses `identify_air_corridor_edge_groups()` from `Experiments/Ex1-ShtPath-GA/Visualize_Air_Corridor_Binary_Edge_Selection_updated.py`
 - **Grouping rule**: layer + corridor axis + fixed index + contiguous segment ID, with forward/reverse sets derived from grid-direction sign
 - **Chromosome**: full binary vector across all groups
+- **Mutation control**: bit-flip mutation uses `--mutation-prob` (default `0.03`, valid range `[0.0, 1.0]`)
 - **Objective**: minimize `sum(collisions) + no_path_count + timeout_count` from simulation outcomes
 - **Invalid handling**: chromosome evaluation still flags invalid when `no_path_count + timeout_count >= 1000`, but fitness is now computed from the objective sum above
 - **Replication schedule**:
@@ -444,6 +445,7 @@ Recommended rules:
     - Python: `SIM_LOG_LEVEL`, `SIM_LOG_FORMAT`
     - Godot: `GA_LOG_LEVEL`
   - Launches Godot headless in GA autorun mode
+  - **Wall-clock guard**: Python waits on the Godot subprocess with `--sim-timeout-seconds` (default **800** seconds) so long 2-hour-scenario batches can finish under typical physics tick rates without false timeouts; override if your machine or scenario needs more headroom.
   - Stops simulation automatically when workload drains (or max sim time)
   - Scores from per-replication collision CSV (`COLLISION_START` count) and route-failure diagnostics:
     - Python pathfinding events: `pathfinding_no_path`, `pathfinding_timeout`
@@ -459,6 +461,7 @@ Example (fully integrated mode):
 ```bash
 python Experiments/Ex1-ShtPath-GA/GA-Experiment1.py \
   --eval-mode integrated \
+  --mutation-prob 0.03 \
   --godot-exe "C:/Path/To/Godot_v4.x-stable_win64.exe" \
   --godot-project-dir "."
 ```
@@ -553,7 +556,7 @@ python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" \
 
 ---
 
-**Last Updated**: 2026-03-31 - Added `--generation-seeds` to make GA per-generation replication count configurable (default `3`)
+**Last Updated**: 2026-04-07 - Added Ex1 GA `--mutation-prob` CLI parameter (default `0.03`) with range validation
 **Godot Version**: 4.3 (GL Compatibility)
 **Python Version**: 3.8+
 

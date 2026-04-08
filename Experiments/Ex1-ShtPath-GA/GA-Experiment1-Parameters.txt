@@ -1,6 +1,6 @@
 GA-Experiment1 Parameter and Metrics Reference
 Source of truth: Experiments/Ex1-ShtPath-GA/GA-Experiment1.py
-Generated: 2026-03-31
+Generated: 2026-04-07
 
 Purpose
 - Simulation-based binary Genetic Algorithm (GA) for air-corridor edge orientation optimization.
@@ -26,7 +26,7 @@ Core objective and validity rules
 GA operators and replacement
 - Tournament selection uses selection scores (minimize); tournament size is `--tournament-size`. Two parents are drawn independently.
 - Uniform crossover with probability `--crossover-prob`; if the uniform draw is >= that value, each child is a copy of its parent (no crossover).
-- Bit-flip mutation per locus with mutation_prob = clip(1 / num_variables, 0.002, 0.03) (function `mutation_probability` in GA-Experiment1.py).
+- Bit-flip mutation per locus uses `--mutation-prob` (default `0.03`) for `mutation_prob`.
 - Elitism: the `--elitism` individuals with lowest selection score are kept; offspring fill the remainder (population size minus elitism). Next population is elites stacked with offspring, trimmed to `--population`.
 - If `--population` - `--elitism` <= 0 (including population == elitism), replacement is fully elitist: only the elite rows are carried forward (safe path for tiny diagnostic runs).
 
@@ -128,6 +128,7 @@ Command-line parameters (defaults)
 - --generations: 120
 - --tournament-size: 3
 - --crossover-prob: 0.85
+- --mutation-prob: 0.03
 - --elitism: 2
 - --early-stop-patience: 20
 - --invalid-threshold: 1000
@@ -138,7 +139,7 @@ Command-line parameters (defaults)
 - --artifact-mode: keep_all (choices: keep_all, keep_failures, minimal)
 - --eval-mode: integrated (choices: integrated, command, mock)
 - --sim-command: "" (required when --eval-mode=command)
-- --sim-timeout-seconds: 360.0
+- --sim-timeout-seconds: 800.0
 - --python-exe: sys.executable
 - --websocket-server-script: ./scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py
 - --godot-exe: godot4
@@ -164,6 +165,7 @@ Runtime guards
 - final-validation-seeds >= 1
 - generation-seeds >= 1
 - sensitivity-max-bits >= 0
+- mutation-prob in [0.0, 1.0]
 - For eval-mode=command, sim-command must be provided.
 
 Run artifacts written by GA-Experiment1.py
@@ -171,7 +173,7 @@ Run artifacts written by GA-Experiment1.py
 - best_solution.json
 - final_validation_summary.json
 - sensitivity_analysis.csv (written only when sensitivity is enabled and rows exist)
-- run_config.json: mirrors CLI arguments plus derived fields (e.g. mutation_prob, num_variables, run_id, sensitivity_bit_count_used, base_seed); inspect ga_runs/<run_id>/run_config.json for a concrete example
+- run_config.json: mirrors CLI arguments plus derived fields (e.g. num_variables, run_id, sensitivity_bit_count_used, base_seed), including `mutation_prob`; inspect ga_runs/<run_id>/run_config.json for a concrete example
 - tensorboard/ (event files)
 - tensorboard_process.log (created when TensorBoard auto-launch is used; subprocess log for troubleshooting)
 - terminal_output.txt
@@ -203,19 +205,20 @@ Final JSON artifact keys
   --population 120 `
   --generations 120 `
   --tournament-size 3 `
-  --crossover-prob 0.85 `
-  --elitism 2 `
+  --crossover-prob 0.95 `
+  --mutation-prob 0.03 `
+  --elitism 3 `
   --early-stop-patience 20 `
   --invalid-threshold 1000 `
   --invalid-penalty 10000 `
-  --workers 18 `
+  --workers 10 `
   --seed 1170 `
-  --generation-seeds: 3 `
+  --generation-seeds 3 `
   --log-mode normal `
   --artifact-mode keep_all `
   --eval-mode integrated `
   --sim-command "" `
-  --sim-timeout-seconds 360 `
+  --sim-timeout-seconds 800 `
   --python-exe "python" `
   --websocket-server-script "./scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py" `
   --godot-exe "godot4" `
@@ -227,8 +230,7 @@ Final JSON artifact keys
   --auto-launch-tensorboard `
   --auto-open-tensorboard-browser `
   --final-validation-top-k 5 `
-  --final-validation-seeds 3 `
-  --generation-seeds 3 `
+  --final-validation-seeds 1 `
   --no-run-sensitivity `
   --sensitivity-max-bits 0 `
   --run-root "./Experiments/Ex1-ShtPath-GA/ga_runs"

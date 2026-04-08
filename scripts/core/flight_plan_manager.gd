@@ -13,7 +13,7 @@ var logger_instance: Node = null
 
 # Configuration: CSV file path for flight plans data
 # Change this constant to load a different flight plan file
-const FLIGHT_PLAN_FILE = "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.csv"
+const FLIGHT_PLAN_FILE = "res://data/Regular_Lattice_Manhattan_600 FP_3DP_2Hrs.csv"
 
 const ORIGIN_LAT = 40.55417343
 const ORIGIN_LON = -73.99583928

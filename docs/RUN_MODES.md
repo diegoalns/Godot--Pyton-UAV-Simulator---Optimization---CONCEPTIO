@@ -51,6 +51,9 @@ Outputs:
   - `keep_all`: keep all `tmp/rep_*` artifacts
   - `keep_failures`: keep only replications with route-failure counters > 0
   - `minimal`: keep only `python_server.log`, `godot.log`, `collision_log.csv`, `python_routes_received.csv`, `godot_summary.json`
+- `--mutation-prob FLOAT` (default: `0.03`)
+  - Per-bit mutation probability used by Ex1 GA bit-flip mutation
+  - Must be in range `[0.0, 1.0]`
 
 Notes:
 - Godot core log writers currently interpret only `GA_LOG_LEVEL=quiet` specially.

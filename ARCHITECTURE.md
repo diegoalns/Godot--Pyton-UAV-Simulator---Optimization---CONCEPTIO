@@ -639,6 +639,7 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 - Evaluates chromosome batches in parallel with a thread pool (`--workers`, default `18`) and cache-aware de-duplication
 - Executes GA operators: tournament selection, uniform crossover, bit-flip mutation, elitism, generational replacement
 - Enforces GA runtime guards for stability in small diagnostics (`population >= 2`, `0 <= elitism <= population`, `workers >= 1`)
+- Enforces mutation probability guard: `0.0 <= --mutation-prob <= 1.0` (default `0.03`)
 - Enforces GA/post-phase guardrails (`generation_seeds >= 1`, `final_validation_top_k >= 1`, `final_validation_seeds >= 1`, `sensitivity_max_bits >= 0`)
 - Supports a safe fully-elitist generation step when `population == elitism` (no offspring phase)
 - GA default configuration now uses `population=120` (CLI override still supported)
@@ -723,7 +724,7 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
     - `SIM_ROUTES_RECEIVED_CSV=<rep_python_routes_received.csv>` (replication-specific route timing CSV isolation)
   - Retries Python server startup with automatic new-port fallback when bind/startup fails under parallel contention
 - Startup readiness accepts either `server_running` in server logs or a successful TCP connect on the assigned replication port (supports quiet logging where INFO markers may be absent)
-  - After server signals ready, starts Godot in headless batch mode via environment flags (below); if Godot exits within 3 seconds, raises with Godot log path and log tail for debugging:
+  - After server signals ready, starts Godot in headless batch mode via environment flags (below). The parent process uses `subprocess.wait` with `--sim-timeout-seconds` (CLI default **800** wall-clock seconds) so full-scenario runs (e.g. multi-hour ETD spreads at ~20 physics Hz and `time_step=1`) can complete before the adapter treats the run as hung; if Godot exits within 3 seconds, raises with Godot log path and log tail for debugging:
 - Early Godot exits are escalated only when exit code is non-zero (fast clean exits are valid for short smoke runs).
   If non-zero within the early window, raises with Godot log path and log tail for debugging:
     - `GA_AUTORUN=1`
@@ -1084,6 +1085,6 @@ Both simulation time and system clock time are tracked for:
 
 ---
 
-**Last Updated**: 2026-03-31 - Added configurable GA generation seed count via `--generation-seeds` and updated guardrails/docs
+**Last Updated**: 2026-04-07 - Added Ex1 GA `--mutation-prob` guardrail and synchronized execution documentation
 **Documentation Version**: 1.8
 
