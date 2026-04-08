@@ -60,3 +60,4 @@ Experiments/**/ga_runs/
 Experiments/**/runs/
 
 # Keep repository source/docs/data tracked by default.
+Godot_v4.3-stable_linux.x86_64
