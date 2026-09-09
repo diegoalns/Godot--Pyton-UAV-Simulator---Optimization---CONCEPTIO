@@ -65,8 +65,13 @@ Godot- Pyton UAV-Simulator - Tests Setup/
 │   ├── Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.csv  # Flight plan data
 │   └── Filtered_FAA_UAS_FacilityMap_Data_LGA.csv  # Terrain altitude data
 ├── resources/                         # 3D models and meshes
+├── tools/
+│   ├── .gdignore                      # Hides tools/ from the Godot editor scan
+│   └── godot_runtime.py               # Shared Godot executable resolution + version check
 ├── drone_models_specifications.txt    # Detailed drone model documentation
+├── godot.sh                           # Linux/macOS: unified Godot launcher (editor by default)
 ├── open_in_godot_editor.bat           # Windows: open this project in Godot editor (GUI)
+├── Godot_v4.3-stable_linux.x86_64     # Local engine binary (gitignored, per machine)
 └── project.godot                      # Godot project configuration
 ```
 
@@ -80,13 +85,11 @@ Godot- Pyton UAV-Simulator - Tests Setup/
 - **Version**: 4.3 (GL Compatibility renderer)
 - **Platform**: Windows, Linux, macOS
 - **Display**: 1920x1080 recommended
+- **Installation**: the engine binary is gitignored and installed per machine. See [Godot Executable Setup](#godot-executable-setup).
 
 ### Python Server
-- **Python**: 3.8 or higher
-- **Dependencies**:
-  - `websockets` - WebSocket server implementation
-  - `networkx` - Graph data structures
-  - `numpy` - Numerical computations
+- **Python**: 3.9 or higher (both GA runners use `argparse.BooleanOptionalAction`, added in 3.9)
+- **Dependencies**: pinned in [requirements.txt](requirements.txt), which is the single source of truth. See [Python Environment Setup](#python-environment-setup).
 - **Graph Data**: `regular_lattice_graph.pkl` must be present in Python script directory
 
 ### Hardware
@@ -94,11 +97,109 @@ Godot- Pyton UAV-Simulator - Tests Setup/
 - **GPU**: OpenGL 3.3 compatible graphics card
 - **Storage**: ~500MB for project files
 
+## Godot Executable Setup
+
+The Godot binary is **not tracked in git**: it is roughly 107 MiB, above GitHub's
+hard 100 MiB per-file limit. Install it once per machine.
+
+1. Download Godot **4.3** for your platform from the
+   [Godot 4.3 archive](https://godotengine.org/download/archive/4.3-stable/).
+   The version must be 4.3 to match `config/features` in `project.godot`; a newer
+   engine will prompt to convert the project.
+2. Extract the binary into the **repository root** (or into `tools/godot/`).
+3. On Linux and macOS, ensure it is executable:
+
+```bash
+chmod +x Godot_v4.3-stable_linux.x86_64
+```
+
+Then verify resolution:
+
+```bash
+./godot.sh --version                          # expect 4.3.stable.official.<hash>
+python3 tools/godot_runtime.py --print-exe    # prints the resolved binary path
+```
+
+`tools/godot_runtime.py` is the single source of truth for engine resolution, shared
+by `godot.sh` and all Python experiment runners. Resolution order for the default
+`--godot-exe auto`:
+
+1. Project-local binary at the repository root
+2. Project-local binary under `tools/godot/`
+3. `PATH` commands `godot4` then `godot`
+4. Common per-user download and document folders
+
+Environment overrides: `PYTHON_BIN` selects the interpreter `godot.sh` uses for
+resolution, and `GODOT_EXE` overrides the resolution input.
+
+## Python Environment Setup
+
+All Python dependencies are pinned in [requirements.txt](requirements.txt). Use a
+project-local virtual environment: modern Debian/Ubuntu systems mark the system
+interpreter as externally managed (PEP 668) and refuse `pip install` into it.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+If `python3 -m venv` reports that `ensurepip` is unavailable, Debian/Ubuntu ships it
+in a separate package. Either install it:
+
+```bash
+sudo apt install python3-venv python3-pip
+```
+
+or, when `sudo` is not available, bootstrap `pip` into the environment directly:
+
+```bash
+python3 -m venv --without-pip .venv
+curl -sS https://bootstrap.pypa.io/get-pip.py | .venv/bin/python
+```
+
+### Why `torch` is a dependency
+
+`torch` is used **only** for `SummaryWriter` TensorBoard scalar logging in the GA and
+baseline runners; no modeling or training uses it. It is therefore pinned to the CPU
+build (`torch==2.14.0+cpu`) via the PyTorch CPU index declared at the top of
+`requirements.txt`, which avoids pulling roughly 2.5 GB of `nvidia-*` CUDA libraries.
+To use a GPU build instead, install an NVIDIA driver first, then reinstall `torch`
+without the CPU index.
+
+### Activation is all that is required
+
+The experiment runners default `--python-exe` to `sys.executable`, so once the venv is
+active, the WebSocket server and TensorBoard subprocesses inherit it automatically. No
+extra flags are needed. The Godot engine needs nothing from the venv.
+
+### Reproducing an exact environment
+
+[requirements.lock.txt](requirements.lock.txt) records the fully resolved transitive
+dependency set from `pip freeze`, for reproducing a known-good environment across
+machines or over time:
+
+```bash
+pip install -r requirements.lock.txt
+```
+
+Verify the install:
+
+```bash
+python -c "import networkx, numpy, pandas, plotly, websockets, torch; \
+from torch.utils.tensorboard import SummaryWriter; print('imports OK')"
+python -m tensorboard.main --help > /dev/null && echo "tensorboard OK"
+```
+
 ## Quick Start
 
 ### 1. Start the Python WebSocket Server
 
+Activate the virtual environment first (see [Python Environment Setup](#python-environment-setup)):
+
 ```bash
+source .venv/bin/activate
 cd scripts/Python/Route\ Gen\ Basic\ Shortest\ Path
 python WebSocketServer.py
 ```
@@ -109,8 +210,10 @@ The server will start on `ws://localhost:8765` and wait for connections from God
 
 **Important:** Starting Godot with only `--path` runs the **game window**, not the **editor**. Use `--editor` (or the launcher below) when you want the GUI.
 
+- **Easiest (Linux/macOS):** run **`./godot.sh`** in the project root. It resolves the engine automatically and opens the editor.
 - **Easiest (Windows):** double-click **`open_in_godot_editor.bat`** in the project root (edit `GODOT_EXE` inside the file if your Godot install path differs).
-- **Command line (editor):**
+- **Command line (any platform):** `./godot.sh` passes every argument through, so `./godot.sh --path .` runs the game window directly and `./godot.sh --headless --path .` runs headless.
+- **Command line (explicit binary):**
   ```text
   "C:\Godot_v4.3-stable_win64.exe\Godot_v4.3-stable_win64.exe" --editor --path "D:\path\to\Godot- Pyton UAV-Simulator - Tests Setup"
   ```
@@ -133,7 +236,7 @@ All supported run modes are documented in `docs/RUN_MODES.md`.
 
 | Mode | Main entrypoint | Launches Python | Launches Godot | Typical use |
 |------|------------------|-----------------|----------------|-------------|
-| Manual interactive | `WebSocketServer.py` + editor `F5` | Manual | Manual | Visual debugging and interactive simulation |
+| Manual interactive | `WebSocketServer.py` + `./godot.sh` (or editor `F5`) | Manual | Manual | Visual debugging and interactive simulation |
 | Integrated | GA/Baseline scripts with `--eval-mode integrated` | Auto | Auto (headless autorun) | Batch experiments and scoring |
 | Command | GA/Baseline scripts with `--eval-mode command` | External | External | Plug external evaluators/adapters |
 | Mock | GA/Baseline scripts with `--eval-mode mock` | No | No | Fast pipeline smoke checks |
@@ -461,17 +564,21 @@ Example (fully integrated mode):
 ```bash
 python Experiments/Ex1-ShtPath-GA/GA-Experiment1.py \
   --eval-mode integrated \
-  --mutation-prob 0.03 \
-  --godot-exe "C:/Path/To/Godot_v4.x-stable_win64.exe" \
-  --godot-project-dir "."
+  --mutation-prob 0.03
 ```
 
+`--godot-exe` and `--godot-project-dir` no longer need to be passed when the engine
+binary sits at the repository root. See
+[Godot Executable Setup](#godot-executable-setup) for resolution details.
+
 Godot executable resolution behavior:
-- `--godot-exe` accepts a direct executable path, a PATH command (e.g. `godot4`), or a directory containing Godot binaries.
+- `--godot-exe` defaults to `auto`, which resolves in this order: project-local binary at the repository root, project-local binary under `tools/godot/`, `PATH` commands (`godot4`, `godot`), then common per-user download and document folders.
+- Any other `--godot-exe` value is an explicit override and accepts a direct executable path, a PATH command (e.g. `godot4`), or a directory containing Godot binaries.
 - For Windows extracted bundles where the folder name ends with `.exe`, the script auto-resolves the actual executable inside that folder.
-- If `--godot-exe` cannot be resolved, integrated mode automatically searches common local locations (`Downloads`, `Documents`, and OneDrive document folders) for `Godot*.exe`.
-- Integrated mode performs a startup preflight check: WebSocket server script and `project.godot` path are validated; then **Godot is run with `--version`** to ensure the binary actually starts (catches wrong path, missing DLLs, etc.). If Godot exits shortly after launch during a replication, the script reports the Godot log path and the last 2000 characters of the log to help debug.
+- On Linux and macOS, a binary found without the execute bit produces an explicit `chmod +x` message rather than a misleading "not found" error.
+- Integrated mode performs a startup preflight check: WebSocket server script and `project.godot` path are validated, then **Godot is run with `--version`** to confirm the binary starts and to warn when it does not report 4.3 (a newer engine can trigger project conversion). A version mismatch warns on stderr but does not block the run. If Godot exits shortly after launch during a replication, the script reports the Godot log path and the last 2000 characters of the log to help debug.
 - Early Godot exits are treated as failures only when the return code is non-zero; fast clean exits are accepted (useful for tiny smoke tests with low `--integrated-max-sim-time`).
+- `--websocket-server-script` and `--godot-project-dir` default to repository-root absolute paths, so runners can be launched from any working directory.
 
 Optional external adapter mode is still available via `--eval-mode command` and `--sim-command`.
 
@@ -501,9 +608,7 @@ Example (original-orientation baseline):
 python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" \
   --replications 100 \
   --workers 24 \
-  --eval-mode integrated \
-  --godot-exe "C:/Path/To/Godot_v4.x-stable_win64.exe" \
-  --godot-project-dir "."
+  --eval-mode integrated
 ```
 
 ### Adding New Drone Models
@@ -515,7 +620,9 @@ python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" \
 ### Git Ignore Policy
 
 - A repository-level `.gitignore` is provided and should be used for first-time GitHub publishing.
-- Keep generated/local artifacts untracked: `.godot/`, `.import/`, Python caches, virtual envs, and notebook checkpoints.
+- Keep generated/local artifacts untracked: `.godot/`, `.import/`, Python caches, virtual envs (`.venv/`), and notebook checkpoints.
+- Keep `requirements.txt` and `requirements.lock.txt` **tracked**. They are the dependency source of truth; only the resulting `.venv/` is ignored.
+- Keep the local Godot engine binary untracked (`/Godot_v*_linux.x86_64`, `/Godot_v*.exe`, `/Godot_v*.app/`, `tools/godot/`). A Godot 4.3 build is roughly 107 MiB, above GitHub's hard 100 MiB per-file limit, so committing it makes pushes fail. Install it per machine as described in [Godot Executable Setup](#godot-executable-setup).
 - Keep local IDE scratch/workspace state untracked (for example `.cursor/`, transient terminal dump files like `terminal_*.txt`, and ad-hoc AI notes such as `cursor_purpose_*.md`).
 - Keep runtime outputs untracked: `logs/*.csv`, `logs/*.log`, and `logs/*.ipynb`.
 - Keep experiment-run artifacts untracked under `Experiments/` (for example: `tmp/`, `tensorboard/`, per-rep logs/CSVs/JSONs, and generated run folders such as `baseline_runs/` and `directed_graph_5_runs/`).
@@ -528,10 +635,22 @@ python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" \
 - Check firewall settings
 - Verify no other process is using port 8765
 
+### Godot Executable Not Found
+- Run `python3 tools/godot_runtime.py --print-exe` to see what resolution finds and why it fails
+- Confirm a Godot 4.3 binary is at the repository root or in `tools/godot/`
+- On Linux/macOS, a binary found without the execute bit reports an explicit `chmod +x` message
+- Override explicitly with `--godot-exe /path/to/binary` if automatic resolution is not wanted
+
+### Python Dependencies Not Found
+- `ModuleNotFoundError` usually means the virtual environment is not active. Run `source .venv/bin/activate` and confirm with `which python`, which should point inside `.venv/`.
+- `error: externally-managed-environment` means `pip` is targeting the system interpreter. Create and activate the venv instead of installing globally.
+- If `python3 -m venv` fails on `ensurepip`, see [Python Environment Setup](#python-environment-setup) for the apt package and the no-sudo bootstrap.
+
 ### Drones Not Launching
 - Check flight plan CSV file format
 - Verify ETD times are in the future
 - Check console for error messages
+- In integrated GA runs, no drone launches before the first `ETD` in the flight plan. If `--integrated-max-sim-time` is lower than that ETD, every score is `0.0` with `queue_remaining` equal to the full plan count in `godot_summary.json`. This is a too-short time cap, not a failure.
 
 ### Pathfinding Timeouts
 - Increase pathfinding timeout in `WebSocketServer.py`
@@ -556,7 +675,7 @@ python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" \
 
 ---
 
-**Last Updated**: 2026-04-07 - Added Ex1 GA `--mutation-prob` CLI parameter (default `0.03`) with range validation
+**Last Updated**: 2026-09-09 - Added pinned `requirements.txt` / `requirements.lock.txt` and the `.venv` setup workflow (CPU-only `torch` for TensorBoard logging); corrected the Python floor to 3.9+
 **Godot Version**: 4.3 (GL Compatibility)
-**Python Version**: 3.8+
+**Python Version**: 3.9+
 

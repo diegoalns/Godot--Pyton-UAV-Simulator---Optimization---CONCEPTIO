@@ -30,6 +30,9 @@ THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
+# Experiments/Ex0-Baseline/<file>.py -> repository root.
+REPO_ROOT = THIS_DIR.parents[1]
+
 
 def load_ga_module():
     """
@@ -84,10 +87,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--websocket-server-script",
         type=str,
-        default="./scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py",
+        default=str(
+            REPO_ROOT / "scripts" / "Python" / "Route Gen Basic Shortest Path" / "WebSocketServer.py"
+        ),
     )
-    parser.add_argument("--godot-exe", type=str, default="godot4")
-    parser.add_argument("--godot-project-dir", type=str, default=".")
+    parser.add_argument("--godot-exe", type=str, default="auto")
+    parser.add_argument("--godot-project-dir", type=str, default=str(REPO_ROOT))
     parser.add_argument("--integrated-max-sim-time", type=float, default=15000.0)
     parser.add_argument("--server-start-timeout", type=float, default=20.0)
 
@@ -167,7 +172,9 @@ def main() -> None:
         project_dir = Path(args.godot_project_dir).resolve()
         if not (project_dir / "project.godot").exists():
             raise FileNotFoundError(f"No project.godot found in --godot-project-dir: {project_dir}")
+        godot_version = ga.verify_godot_version(args.godot_exe)
         print(f"Integrated mode preflight OK. Godot executable: {args.godot_exe}")
+        print(f"Integrated mode preflight OK. Godot version: {godot_version or 'unknown'}")
         print(f"Integrated mode preflight OK. Godot project dir: {project_dir}")
 
     run_id = datetime.now().strftime("DirectedGraph5_%Y%m%d_%H%M%S")

@@ -141,9 +141,9 @@ Command-line parameters (defaults)
 - --sim-command: "" (required when --eval-mode=command)
 - --sim-timeout-seconds: 800.0
 - --python-exe: sys.executable
-- --websocket-server-script: ./scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py
-- --godot-exe: godot4
-- --godot-project-dir: .
+- --websocket-server-script: <repo root>/scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py
+- --godot-exe: auto (project-local binary, then PATH godot4/godot, then per-user folders)
+- --godot-project-dir: <repo root>
 - --integrated-max-sim-time: 15000.0
 - --server-start-timeout: 20.0
 - --tensorboard-port: 6007
@@ -220,9 +220,7 @@ Final JSON artifact keys
   --sim-command "" `
   --sim-timeout-seconds 800 `
   --python-exe "python" `
-  --websocket-server-script "./scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py" `
-  --godot-exe "godot4" `
-  --godot-project-dir "." `
+  --godot-exe "auto" `
   --integrated-max-sim-time 15000 `
   --server-start-timeout 20 `
   --tensorboard-port 6007 `

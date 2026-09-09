@@ -710,11 +710,12 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 - Integrated mode (default):
   - Builds per-replication oriented graph pickle from chromosome-selected horizontal edges (vertical edges preserved)
   - Performs preflight validation before GA loop:
-    - Resolves `--godot-exe` from executable path, PATH command, or Godot binary directory
+    - Resolves `--godot-exe` through the shared `tools/godot_runtime.py` module (see [Godot Executable Resolution](#godot-executable-resolution))
+    - Default `--godot-exe auto` prefers the project-local binary, then `PATH`, then common local folders
     - Falls back to auto-discovery in common local folders when explicit `--godot-exe` resolution fails
     - Verifies Python WebSocket server script exists
     - Verifies `project.godot` exists in `--godot-project-dir`
-    - Runs Godot with `--version` to confirm the binary starts (fails fast on wrong path or missing DLLs)
+    - Runs Godot with `--version` and warns on stderr when the reported version is not 4.3 (mismatch does not block the run)
   - Starts Python `WebSocketServer.py` with environment overrides:
     - `GRAPH_PICKLE_PATH=<rep_oriented_graph.pkl>`
     - `WS_SERVER_HOST=127.0.0.1`
@@ -1024,13 +1025,87 @@ Both simulation time and system clock time are tracked for:
 
 ## Additional Components
 
-### Local tooling (Windows)
+### Godot Executable Resolution
 
-- **`open_in_godot_editor.bat`** (project root): starts the Godot **editor** with `--editor --path` pointed at this folder. Use this (or the same CLI) when you need the GUI; invoking Godot with `--path` alone runs the exported main scene without opening the editor.
+**`tools/godot_runtime.py`** is the single source of truth for locating the engine
+binary. It is shared by the shell launcher and every Python experiment runner, so
+manual and automated runs can never disagree about which executable is used.
+
+Public surface:
+- `project_local_godot()` - globs the repository root and `tools/godot/` for a platform-appropriate binary. Returns the highest lexical executable match. Raises `PermissionError` with a `chmod +x` hint when a match exists but lacks the execute bit, instead of silently skipping it and producing a misleading "not found" error later.
+- `resolve_godot_executable(value)` - accepts the `auto` sentinel, a direct file path, a directory containing the binary, a Windows extracted folder named `*.exe`, or a `PATH` command name.
+- `auto_detect_godot_executable()` - project-local binary first, then `PATH` (`godot4`, `godot`), then common per-user download and document folders. Patterns cover Windows `.exe`, Linux `.x86_64`, and macOS `.app` layouts.
+- `verify_godot_version(exe)` - runs `--version`, parses the reported string (for example `4.3.stable.official.<hash>`), and warns when it does not match `EXPECTED_GODOT_VERSION` (`4.3`). Never raises and never blocks a run.
+- `--print-exe` CLI - lets `godot.sh` reuse the exact same resolution logic.
+
+Diagnostics are written to stderr and the resolved path to stdout, so shell callers
+can capture the path cleanly while warnings still surface in experiment terminal logs
+(both streams are mirrored to `terminal_output.txt`).
+
+Resolution order for `--godot-exe auto` (the default in all runners):
+
+1. Project-local binary at the repository root
+2. Project-local binary under `tools/godot/`
+3. `PATH` commands `godot4` then `godot`
+4. Common per-user download and document folders
+
+The engine binary itself is gitignored and installed per machine: a Godot 4.3 build
+is roughly 107 MiB, above GitHub's hard 100 MiB per-file limit.
+
+### Python Dependency Environment
+
+**`requirements.txt`** (repository root) is the single source of truth for Python
+dependencies, with **`requirements.lock.txt`** recording the fully resolved transitive
+set from `pip freeze` for exact reproducibility across machines and over time. This
+matters for a research repository where run artifacts are compared across dates.
+
+Minimum interpreter is **Python 3.9**, set by `argparse.BooleanOptionalAction` in both
+GA runners.
+
+Dependencies and why each is present:
+
+| Package | Role |
+|---|---|
+| `networkx`, `numpy` | Graph construction, orientation, and pathfinding |
+| `websockets` | Godot ↔ Python route server transport |
+| `torch`, `tensorboard` | `SummaryWriter` scalar logging only |
+| `pandas`, `plotly` | Air-corridor visualization scripts |
+
+**`torch` is a logging dependency, not a modeling one.** It is used solely for
+`torch.utils.tensorboard.SummaryWriter`; no part of the simulator or the GA performs
+tensor computation. It is therefore pinned to the CPU wheel (`torch==2.14.0+cpu`) via
+the PyTorch CPU index declared at the top of `requirements.txt`. The `+cpu` local
+version tag exists only on that index, so the pin deterministically selects the CPU
+build even with PyPI enabled, avoiding roughly 2.5 GB of `nvidia-*` CUDA libraries that
+would never be exercised.
+
+**Environment propagation**: experiment runners default `--python-exe` to
+`sys.executable`, so an activated virtual environment is inherited by the
+`WebSocketServer.py` and TensorBoard subprocesses without any extra flags. The Godot
+process needs nothing from the environment. This makes activation the only setup step
+at run time:
+
+```
+source .venv/bin/activate
+   └─> GA-Experiment1.py            (sys.executable = .venv/bin/python)
+        ├─> WebSocketServer.py      (inherits via --python-exe default)
+        ├─> tensorboard.main        (inherits via -m on the same interpreter)
+        └─> Godot 4.3 headless      (independent of the venv)
+```
+
+On PEP 668 systems (Debian/Ubuntu and derivatives) the system interpreter is marked
+externally managed and refuses direct `pip install`, so the virtual environment is
+required rather than merely recommended.
+
+### Local tooling
+
+- **`godot.sh`** (project root, Linux/macOS): unified launcher. With no arguments it opens the **editor** (`--editor --path <repo root>`); with arguments it passes them straight through, so `./godot.sh --headless --path .` and `./godot.sh --version` also work. It resolves the binary via `tools/godot_runtime.py --print-exe`. `PYTHON_BIN` overrides the interpreter used for resolution, and `GODOT_EXE` overrides the resolution input.
+- **`open_in_godot_editor.bat`** (project root, Windows): starts the Godot **editor** with `--editor --path` pointed at this folder. Use this (or the same CLI) when you need the GUI; invoking Godot with `--path` alone runs the exported main scene without opening the editor.
 
 ### Editor / filesystem performance
 
 - **`Experiments/.gdignore`**: Marks the bulk experiment-output tree as ignored by Godot (see [Ignoring specific folders](https://docs.godotengine.org/en/stable/tutorials/best_practices/project_organization.html#ignoring-specific-folders)). This repo’s `Experiments/` subtree can hold **40k+** small files from batch runs; scanning and importing them on every editor start makes the GUI appear frozen or “looping” on the splash screen. Ignored folders do not appear in the FileSystem dock but remain normal files for Python and shell tools.
+- **`tools/.gdignore`**: Hides the shared Python tooling folder from the editor scan for the same reason. Note that a `.gdignore` cannot be placed at the project root, since it would exclude all of `res://`; that is why an engine binary sitting at the root remains visible in the FileSystem dock. Godot does not import it, because the extension is not a recognized resource type.
 
 ### Autoload Singletons
 
@@ -1076,15 +1151,17 @@ Both simulation time and system clock time are tracked for:
 
 - A root `.gitignore` defines the GitHub baseline for this repository.
 - Source/runtime code and static inputs remain tracked by default (`scripts/`, `scenes/`, `docs/`, `data/`, `resources/`).
+- `requirements.txt` and `requirements.lock.txt` are **intentionally tracked** as the dependency source of truth; only the materialized `.venv/` is ignored.
 - Generated artifacts are intentionally ignored to keep history clean and repository size stable:
   - Godot/editor caches (`.godot/`, `.import/`, `*.import`)
-  - Python local/runtime caches (`__pycache__/`, virtual env folders, notebook checkpoints)
+  - Local Godot engine binaries (`/Godot_v*_linux.x86_64`, `/Godot_v*.exe`, `/Godot_v*.app/`, `tools/godot/`) - installed per machine because a 4.3 build is roughly 107 MiB, above GitHub's hard 100 MiB per-file limit
+  - Python local/runtime caches (`__pycache__/`, virtual env folders such as `.venv/`, notebook checkpoints)
   - Local IDE/session-only files (`.cursor/`, `terminal_*.txt`, `cursor_purpose_*.md`)
   - Runtime output under `logs/` (`*.csv`, `*.log`, `*.ipynb`)
   - Experiment run outputs under `Experiments/` (`tmp/`, `tensorboard/`, per-replication logs/CSVs/JSONs, and generated run folders such as `baseline_runs/`, `directed_graph_5_runs/`, `ga_runs/`)
 
 ---
 
-**Last Updated**: 2026-04-07 - Added Ex1 GA `--mutation-prob` guardrail and synchronized execution documentation
-**Documentation Version**: 1.8
+**Last Updated**: 2026-09-09 - Added the Python dependency environment (`requirements.txt` / `requirements.lock.txt`, CPU-pinned `torch` for TensorBoard logging, `sys.executable` venv propagation)
+**Documentation Version**: 2.0
 

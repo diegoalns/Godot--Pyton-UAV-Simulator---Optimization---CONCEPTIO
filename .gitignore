@@ -7,6 +7,12 @@
 .import/
 *.import
 
+# Local Godot engine binaries (exceed GitHub's 100 MiB file limit; install per-machine)
+/Godot_v*_linux.x86_64
+/Godot_v*.exe
+/Godot_v*.app/
+tools/godot/
+
 # Python caches and virtual environments
 __pycache__/
 *.py[cod]

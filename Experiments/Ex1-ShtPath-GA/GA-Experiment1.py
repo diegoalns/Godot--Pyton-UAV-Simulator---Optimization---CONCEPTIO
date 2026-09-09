@@ -47,8 +47,19 @@ THIS_DIR = Path(__file__).resolve().parent
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
+# Experiments/<ExN-*>/<file>.py -> repository root, for shared tooling under tools/.
+REPO_ROOT = THIS_DIR.parents[1]
+if str(REPO_ROOT / "tools") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+
 from edge_grouping import (
     identify_air_corridor_edge_groups,
+)
+from godot_runtime import (
+    AUTO_SENTINEL as GODOT_AUTO_SENTINEL,
+    auto_detect_godot_executable,
+    resolve_godot_executable,
+    verify_godot_version,
 )
 
 try:
@@ -701,105 +712,6 @@ def load_graph_pickle_safe(pickle_file: str) -> Tuple[nx.DiGraph, dict]:
     return graph, metadata if isinstance(metadata, dict) else {}
 
 
-def resolve_godot_executable(godot_exe_arg: str) -> str:
-    """
-    Resolve a usable Godot executable path.
-
-    Supports:
-    - Direct executable path
-    - PATH command names (e.g. godot4)
-    - Directory path containing Godot binaries
-    - Windows extracted folder named like '*.exe' containing the real .exe inside
-    """
-    raw = (godot_exe_arg or "").strip().strip('"')
-    if not raw:
-        raise ValueError("Empty --godot-exe value.")
-
-    candidate_path = Path(raw).expanduser()
-
-    # 1) Existing file path.
-    if candidate_path.exists() and candidate_path.is_file():
-        return str(candidate_path.resolve())
-
-    # 2) Existing directory path (or extracted folder with .exe suffix).
-    if candidate_path.exists() and candidate_path.is_dir():
-        folder = candidate_path
-        base_name = candidate_path.name
-        stem = candidate_path.stem
-        preferred = [
-            folder / base_name,  # e.g. <dir>/Godot_v4.3-stable_win64.exe
-            folder / f"{stem}_console.exe",
-            folder / f"{stem}.exe",
-        ]
-        for p in preferred:
-            if p.exists() and p.is_file():
-                return str(p.resolve())
-
-        # Then broader search: prefer console binary for better diagnostics.
-        for pattern in ("*_console.exe", "Godot*.exe", "*.exe"):
-            matches = sorted(folder.glob(pattern))
-            for m in matches:
-                if m.is_file():
-                    return str(m.resolve())
-
-    # 3) Command on PATH.
-    from_path = shutil.which(raw)
-    if from_path:
-        return str(Path(from_path).resolve())
-
-    raise FileNotFoundError(
-        "Could not resolve Godot executable from --godot-exe. "
-        f"Provided value: '{godot_exe_arg}'. "
-        "Pass a real executable path, a directory containing the executable, or a command available on PATH."
-    )
-
-
-def auto_detect_godot_executable() -> Optional[str]:
-    """
-    Try to auto-detect Godot executable in common local locations.
-    """
-    # PATH first.
-    for cmd in ("godot4", "godot"):
-        path_hit = shutil.which(cmd)
-        if path_hit:
-            return str(Path(path_hit).resolve())
-
-    home = Path.home()
-    search_roots = [
-        home / "Downloads",
-        home / "Documents",
-        home / "OneDrive" / "Documents",
-        home / "OneDrive" / "Divesos" / "Documentos",
-    ]
-
-    candidates: List[Path] = []
-    for root in search_roots:
-        if not root.exists():
-            continue
-        # Common extracted layouts:
-        # - <root>/Godot_vX.Y-stable_win64.exe/Godot_vX.Y-stable_win64.exe
-        # - <root>/Godot.../Godot*.exe
-        patterns = [
-            "Godot*.exe",
-            "Godot*.exe/Godot*.exe",
-            "Godot*/Godot*.exe",
-        ]
-        for pattern in patterns:
-            for match in root.glob(pattern):
-                if match.is_file():
-                    candidates.append(match.resolve())
-
-    if not candidates:
-        return None
-
-    # Prefer console exe for better logs, otherwise highest lexical match.
-    candidates = sorted(set(candidates))
-    console_hits = [p for p in candidates if p.name.endswith("_console.exe")]
-    if console_hits:
-        return str(console_hits[-1])
-    return str(candidates[-1])
-
-
 def mutation_probability(num_variables: int) -> float:
     base = 1.0 / max(1, num_variables)
     return float(np.clip(base, 0.002, 0.03))
@@ -1098,10 +1010,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--websocket-server-script",
         type=str,
-        default="./scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py",
+        default=str(
+            REPO_ROOT / "scripts" / "Python" / "Route Gen Basic Shortest Path" / "WebSocketServer.py"
+        ),
     )
-    parser.add_argument("--godot-exe", type=str, default="godot4")
-    parser.add_argument("--godot-project-dir", type=str, default=".")
+    parser.add_argument("--godot-exe", type=str, default=GODOT_AUTO_SENTINEL)
+    parser.add_argument("--godot-project-dir", type=str, default=str(REPO_ROOT))
     parser.add_argument("--integrated-max-sim-time", type=float, default=15000.0)
     parser.add_argument("--server-start-timeout", type=float, default=20.0)
     parser.add_argument("--tensorboard-port", type=int, default=6007)
@@ -1170,7 +1084,9 @@ def main() -> None:
             raise FileNotFoundError(
                 f"No project.godot found in --godot-project-dir: {project_dir}"
             )
+        godot_version = verify_godot_version(args.godot_exe)
         print(f"Integrated mode preflight OK. Godot executable: {args.godot_exe}")
+        print(f"Integrated mode preflight OK. Godot version: {godot_version or 'unknown'}")
         print(f"Integrated mode preflight OK. Godot project dir: {project_dir}")
 
     run_id = datetime.now().strftime("GA-Experiment1_%Y%m%d_%H%M%S")

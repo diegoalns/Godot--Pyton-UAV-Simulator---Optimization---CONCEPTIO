@@ -1,0 +1,34 @@
+# Python dependencies for the Godot UAV Simulator.
+#
+# Setup:
+#   python3 -m venv .venv && source .venv/bin/activate
+#   pip install --upgrade pip && pip install -r requirements.txt
+#
+# If "python3 -m venv" cannot install pip (Debian/Ubuntu ship ensurepip in a
+# separate package), either install it with
+#   sudo apt install python3-venv python3-pip
+# or bootstrap pip into the environment without root:
+#   python3 -m venv --without-pip .venv
+#   curl -sS https://bootstrap.pypa.io/get-pip.py | .venv/bin/python
+#
+# Requires Python 3.9+ (argparse.BooleanOptionalAction).
+#
+# torch is pinned to the CPU build: this project uses it only for
+# SummaryWriter scalar logging, so the CUDA wheel's large nvidia-*
+# dependency set would be dead weight.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Graph construction and pathfinding
+networkx==3.6.1
+numpy==2.5.3
+
+# WebSocket route server (Godot <-> Python)
+websockets==17.1
+
+# TensorBoard scalar logging for GA and baseline runs
+torch==2.14.0+cpu
+tensorboard==2.21.0
+
+# Air-corridor visualization scripts (Visualize_Binary_Edge_Selection*.py)
+pandas==3.0.5
+plotly==7.0.0
