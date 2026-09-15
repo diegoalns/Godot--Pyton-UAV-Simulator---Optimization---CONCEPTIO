@@ -133,7 +133,7 @@ Command-line parameters (defaults)
 - --early-stop-patience: 20
 - --invalid-threshold: 1000
 - --invalid-penalty: 10000.0
-- --workers: 18
+- --workers: 28
 - --seed: 160
 - --log-mode: normal (choices: quiet, normal, verbose)
 - --artifact-mode: keep_all (choices: keep_all, keep_failures, minimal)
@@ -198,37 +198,49 @@ Final JSON artifact keys
   - top_k_used
   - heldout_seed_count
   - top_results[] with candidate_* keys
+Canonical CLI command templates (bash)
+- Run from repository root and activate the virtual environment first:
+  - cd "/home/alvesdan/ADCL - UAV/Godot--Pyton-UAV-Simulator---Optimization---CONCEPTIO"
+  - source .venv/bin/activate
+- Keep paths with spaces quoted.
 
+Defaults-based full command (multi-line):
 
-  python "Experiments/Ex1-ShtPath-GA/GA-Experiment1.py" `
-  --pickle-file "./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl" `
-  --population 120 `
-  --generations 120 `
-  --tournament-size 3 `
-  --crossover-prob 0.95 `
-  --mutation-prob 0.03 `
-  --elitism 3 `
-  --early-stop-patience 20 `
-  --invalid-threshold 1000 `
-  --invalid-penalty 10000 `
-  --workers 10 `
-  --seed 1170 `
-  --generation-seeds 3 `
-  --log-mode normal `
-  --artifact-mode keep_all `
-  --eval-mode integrated `
-  --sim-command "" `
-  --sim-timeout-seconds 800 `
-  --python-exe "python" `
-  --godot-exe "auto" `
-  --integrated-max-sim-time 15000 `
-  --server-start-timeout 20 `
-  --tensorboard-port 6007 `
-  --tensorboard-host "127.0.0.1" `
-  --auto-launch-tensorboard `
-  --auto-open-tensorboard-browser `
-  --final-validation-top-k 5 `
-  --final-validation-seeds 1 `
-  --no-run-sensitivity `
-  --sensitivity-max-bits 0 `
+python "Experiments/Ex1-ShtPath-GA/GA-Experiment1.py" \
+  --pickle-file "./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl" \
+  --population 120 \
+  --generations 120 \
+  --tournament-size 3 \
+  --crossover-prob 0.85 \
+  --mutation-prob 0.03 \
+  --elitism 2 \
+  --early-stop-patience 20 \
+  --invalid-threshold 1000 \
+  --invalid-penalty 10000.0 \
+  --workers 28 \
+  --seed 42 \
+  --log-mode normal \
+  --artifact-mode minimal \
+  --eval-mode integrated \
+  --sim-command "" \
+  --sim-timeout-seconds 800.0 \
+  --python-exe "$(which python)" \
+  --websocket-server-script "scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py" \
+  --godot-exe auto \
+  --godot-project-dir "." \
+  --integrated-max-sim-time 15000.0 \
+  --server-start-timeout 20.0 \
+  --tensorboard-port 6007 \
+  --tensorboard-host "127.0.0.1" \
+  --auto-launch-tensorboard \
+  --auto-open-tensorboard-browser \
+  --final-validation-top-k 3 \
+  --final-validation-seeds 1 \
+  --generation-seeds 3 \
+  --no-run-sensitivity \
+  --sensitivity-max-bits 0 \
   --run-root "./Experiments/Ex1-ShtPath-GA/ga_runs"
+
+Defaults-based full command (single-line):
+
+python "Experiments/Ex1-ShtPath-GA/GA-Experiment1.py" --pickle-file "./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl" --population 120 --generations 120 --tournament-size 3 --crossover-prob 0.85 --mutation-prob 0.03 --elitism 2 --early-stop-patience 20 --invalid-threshold 1000 --invalid-penalty 10000.0 --workers 28 --seed 160 --log-mode normal --artifact-mode keep_all --eval-mode integrated --sim-command "" --sim-timeout-seconds 800.0 --python-exe "$(which python)" --websocket-server-script "scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py" --godot-exe auto --godot-project-dir "." --integrated-max-sim-time 15000.0 --server-start-timeout 20.0 --tensorboard-port 6007 --tensorboard-host "127.0.0.1" --auto-launch-tensorboard --auto-open-tensorboard-browser --final-validation-top-k 5 --final-validation-seeds 20 --generation-seeds 3 --run-sensitivity --sensitivity-max-bits 0 --run-root "./Experiments/Ex1-ShtPath-GA/ga_runs"
