@@ -48,7 +48,7 @@ def load_ga_module():
     spec.loader.exec_module(module)
     return module
 
-
+2
 def summarize_numeric(values: List[float]) -> Dict[str, float]:
     if not values:
         return {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0, "sum": 0.0}

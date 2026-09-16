@@ -1,0 +1,241 @@
+================================================================================
+EX0-BASELINE CLI COMMAND REFERENCE
+================================================================================
+
+Canonical, copy-pasteable command lines for the two Ex0 baseline runners.
+Every flag that the scripts accept is listed explicitly with its default value,
+so you can copy a block, edit any value in place, and paste it in the terminal.
+
+Both runners share exactly the same 16 flags. The only difference between them
+is the default --run-root, so there is one complete example per script.
+
+Last Updated: 2026-09-10
+
+
+--------------------------------------------------------------------------------
+0) PREREQUISITES (required for every command below)
+--------------------------------------------------------------------------------
+
+1. Run from the REPOSITORY ROOT. The --pickle-file and --run-root defaults are
+   relative paths, so running from another directory will not find the graph
+   pickle and will scatter output folders.
+
+2. Activate the project virtual environment. --python-exe defaults to the
+   active interpreter, so the spawned WebSocketServer.py inherits the venv.
+
+Paste this first:
+
+cd "/home/alvesdan/ADCL - UAV/Godot--Pyton-UAV-Simulator---Optimization---CONCEPTIO"
+source .venv/bin/activate
+
+Note: the script filenames and the WebSocketServer.py path contain spaces.
+Keep every path argument inside double quotes exactly as shown.
+
+
+--------------------------------------------------------------------------------
+1) BASELINE UNDIRECTED GRAPH TEST - original orientation, no optimization
+--------------------------------------------------------------------------------
+
+Script:   Experiments/Ex0-Baseline/Baseline Undirected Graph test.py
+Run root: ./Experiments/Ex0-Baseline/baseline_runs
+Outputs:  baseline_experiment.csv, baseline_summary.csv, baseline_run_config.json
+
+--- 1a) Multi-line form (readable, edit any line) ---
+
+python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" \
+  --pickle-file "./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl" \
+  --replications 100 \
+  --workers 28 \
+  --seed 42 \
+  --eval-mode integrated \
+  --sim-command "" \
+  --sim-timeout-seconds 800 \
+  --python-exe "$(which python)" \
+  --websocket-server-script "scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py" \
+  --godot-exe auto \
+  --godot-project-dir "." \
+  --integrated-max-sim-time 15000 \
+  --server-start-timeout 20 \
+  --invalid-threshold 1000 \
+  --invalid-penalty 10000 \
+  --run-root "./Experiments/Ex0-Baseline/baseline_runs"
+
+--- 1b) Single-line form (safest to paste, no line continuations) ---
+
+python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" --pickle-file "./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl" --replications 100 --workers 10 --seed 42 --eval-mode integrated --sim-command "" --sim-timeout-seconds 800 --python-exe "$(which python)" --websocket-server-script "scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py" --godot-exe auto --godot-project-dir "." --integrated-max-sim-time 15000 --server-start-timeout 20 --invalid-threshold 1000 --invalid-penalty 10000 --run-root "./Experiments/Ex0-Baseline/baseline_runs"
+
+
+--------------------------------------------------------------------------------
+2) BASELINE DIRECTED GRAPH 5 TEST - five fixed orientation presets
+--------------------------------------------------------------------------------
+
+Script:   Experiments/Ex0-Baseline/Baseline Directed Graph 5 test.py
+Run root: ./Experiments/Ex0-Baseline/directed_graph_5_runs
+Presets:  all_forward, all_reverse, alternating, random_a, random_b
+Outputs:  graph_0..graph_4/directed_experiment.csv,
+          graph_0..graph_4/directed_summary.csv,
+          graph_0..graph_4/directed_run_config.json
+
+Cost warning: --replications is applied PER PRESET, so the total simulation
+count is 5 x --replications (the default 100 means 500 replications).
+
+--- 2a) Multi-line form (readable, edit any line) ---
+
+python "Experiments/Ex0-Baseline/Baseline Directed Graph 5 test.py" \
+  --pickle-file "./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl" \
+  --replications 100 \
+  --workers 28 \
+  --seed 42 \
+  --eval-mode integrated \
+  --sim-command "" \
+  --sim-timeout-seconds 800 \
+  --python-exe "$(which python)" \
+  --websocket-server-script "scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py" \
+  --godot-exe auto \
+  --godot-project-dir "." \
+  --integrated-max-sim-time 15000 \
+  --server-start-timeout 20 \
+  --invalid-threshold 1000 \
+  --invalid-penalty 10000 \
+  --run-root "./Experiments/Ex0-Baseline/directed_graph_5_runs"
+
+--- 2b) Single-line form (safest to paste, no line continuations) ---
+
+python "Experiments/Ex0-Baseline/Baseline Directed Graph 5 test.py" --pickle-file "./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl" --replications 100 --workers 10 --seed 42 --eval-mode integrated --sim-command "" --sim-timeout-seconds 800 --python-exe "$(which python)" --websocket-server-script "scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py" --godot-exe auto --godot-project-dir "." --integrated-max-sim-time 15000 --server-start-timeout 20 --invalid-threshold 1000 --invalid-penalty 10000 --run-root "./Experiments/Ex0-Baseline/directed_graph_5_runs"
+
+
+--------------------------------------------------------------------------------
+3) FLAG REFERENCE (identical for both scripts)
+--------------------------------------------------------------------------------
+
+--pickle-file <path>              [str]   default: ./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl
+    Graph pickle to simulate. Accepts a raw NetworkX graph or a dict with a
+    "graph"/"G" key plus optional "metadata".
+    A local copy also exists at ./Experiments/Ex0-Baseline/regular_lattice_graph.pkl
+    if you want Ex0 to be independent of the Ex1 folder.
+
+--replications <int>              [int]   default: 100
+    Number of simulation replications. Must be >= 1. In the Directed Graph 5
+    runner this count is executed once per orientation preset.
+
+--workers <int>                   [int]   default: 10
+    Thread-pool size for parallel replications. Must be >= 1. Each worker owns
+    an isolated WebSocket port and its own tmp/rep_* folder, so raising this is
+    safe; it is bounded by CPU and RAM, not by port contention.
+
+--seed <int>                      [int]   default: 42
+    Base RNG seed. Derives the full per-replication seed list, so the same seed
+    reproduces the same run.
+
+--eval-mode <mode>                [str]   default: integrated
+    One of: integrated | command | mock
+      integrated  Spawn WebSocketServer.py + headless Godot per replication.
+      command     Delegate to an external evaluator via --sim-command.
+      mock        Deterministic synthetic metrics, no simulation launched.
+
+--sim-command "<template>"        [str]   default: "" (empty)
+    Only used when --eval-mode command. Supports the {seed}, {input_json} and
+    {output_json} placeholders. Leaving it empty is safe in integrated and mock
+    modes; it is REQUIRED (non-empty) when --eval-mode command.
+
+--sim-timeout-seconds <float>     [float] default: 800.0
+    Wall-clock timeout for a single replication process.
+
+--python-exe <path>               [str]   default: the active interpreter
+    Interpreter used to spawn WebSocketServer.py. Leave at the venv interpreter
+    unless you deliberately need a different environment.
+
+--websocket-server-script <path>  [str]   default: <repo>/scripts/Python/Route Gen Basic Shortest Path/WebSocketServer.py
+    Route server entry point. Validated to exist before an integrated run.
+
+--godot-exe <path|auto>           [str]   default: auto
+    "auto" resolves the engine through tools/godot_runtime.py (repo-root binary,
+    then tools/godot/, then godot4/godot on PATH, then common download folders).
+    Any other value is an explicit override: file path, containing directory, or
+    a command on PATH.
+
+--godot-project-dir <path>        [str]   default: <repo root>
+    Directory containing project.godot. Validated before an integrated run.
+
+--integrated-max-sim-time <float> [float] default: 15000.0
+    Passed to Godot as GA_MAX_SIM_TIME. See the caveat in section 5.
+
+--server-start-timeout <float>    [float] default: 20.0
+    Seconds to wait for the "server_running" marker in python_server.log before
+    retrying startup on a fresh port.
+
+--invalid-threshold <int>         [int]   default: 1000
+    no_path_count substituted when a replication raises, and the threshold at
+    or above which a result is flagged invalid.
+
+--invalid-penalty <float>         [float] default: 10000.0
+    collisions value substituted when a replication raises.
+
+--run-root <path>                 [str]   default: per script (see above)
+    Parent folder for the timestamped run directory.
+
+
+--------------------------------------------------------------------------------
+4) QUICK VARIANTS
+--------------------------------------------------------------------------------
+
+--- 4a) Mock smoke test (no Godot, no WebSocket server, finishes in seconds) ---
+
+Use this to verify orchestration, CSV writing and summary output before
+committing to a long integrated run. Godot- and server-related flags are
+ignored in this mode.
+
+python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" --pickle-file "./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl" --replications 4 --workers 2 --seed 42 --eval-mode mock --run-root "./Experiments/Ex0-Baseline/baseline_runs"
+
+--- 4b) Short integrated smoke test (real simulation, few replications) ---
+
+python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" --pickle-file "./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl" --replications 2 --workers 2 --seed 42 --eval-mode integrated --integrated-max-sim-time 4200 --sim-timeout-seconds 800 --godot-exe auto --godot-project-dir "." --run-root "./Experiments/Ex0-Baseline/baseline_runs"
+
+--- 4c) Command mode with an external evaluator ---
+
+--sim-command must be non-empty here. The external process receives GA_SEED,
+GA_INPUT_JSON, GA_OUTPUT_JSON and GA_CHROMOSOME_BITSTRING in its environment,
+and must either write {output_json} or print one JSON object on stdout with the
+keys collisions, no_path_count and timeout_count.
+
+python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" --pickle-file "./Experiments/Ex1-ShtPath-GA/regular_lattice_graph.pkl" --replications 10 --workers 4 --seed 42 --eval-mode command --sim-command "python my_evaluator.py --seed {seed} --in {input_json} --out {output_json}" --sim-timeout-seconds 800 --run-root "./Experiments/Ex0-Baseline/baseline_runs"
+
+
+--------------------------------------------------------------------------------
+5) CAVEATS
+--------------------------------------------------------------------------------
+
+* --integrated-max-sim-time must EXCEED the first ETD in the flight plan, or no
+  drone ever launches and every replication scores 0.0. For the bundled
+  Manhattan plan the first ETD is around 3600, so use at least 4200 for short
+  runs. The 15000 default is already safe.
+  Symptom of a value that is too low: queue_remaining equal to the full plan
+  count and "stop_reason": "max_sim_time_reached" in tmp/rep_*/godot_summary.json.
+
+* The Godot engine binary is gitignored and installed per machine. If
+  --godot-exe auto fails, place a Godot 4.3 build at the repository root or in
+  tools/godot/, or pass an explicit path. Check resolution with:
+      python3 tools/godot_runtime.py --print-exe
+
+* Integrated mode runs a preflight check and warns on stderr when the resolved
+  binary does not report Godot 4.3. The run is not blocked.
+
+* Ex0 has no --log-mode or --artifact-mode flags; those exist only in the Ex1
+  GA runner. Ex0 always keeps its per-replication tmp/rep_* artifacts.
+
+* GA-Experiment1.py inside this folder is NOT an Ex0 entry point. The two
+  baseline runners import it as a module through load_ga_module() to reuse
+  SimulationAdapter and the edge-grouping logic.
+
+* Run artifacts under Experiments/ are gitignored, including baseline_runs/ and
+  directed_graph_5_runs/.
+
+
+--------------------------------------------------------------------------------
+6) RELATED DOCUMENTATION
+--------------------------------------------------------------------------------
+
+README.md            -> "Baseline Tests (No Optimization)" section
+ARCHITECTURE.md      -> sections 6a, 6b (runner responsibilities, artifacts) and 6c (this file)
+docs/RUN_MODES.md    -> run-mode matrix, integrated-mode details and caveats
+================================================================================

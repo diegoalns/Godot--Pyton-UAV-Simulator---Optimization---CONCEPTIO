@@ -73,6 +73,13 @@ Supported by:
 - `Experiments/Ex0-Baseline/Baseline Undirected Graph test.py`
 - `Experiments/Ex0-Baseline/Baseline Directed Graph 5 test.py`
 
+For the two Ex0 runners, `Experiments/Ex0-Baseline/EX0_CLI_Comand.txt` holds
+ready-to-paste command lines with all 16 flags set explicitly, in both
+multi-line and single-line form, plus mock and command mode variants.
+
+For Ex1 GA, `Experiments/Ex1-ShtPath-GA/GA-Experiment1-Parameters.txt` provides
+the full defaults-based CLI template in bash-ready multi-line and single-line form.
+
 Prerequisite: activate the virtual environment before launching a runner. Because
 `--python-exe` defaults to `sys.executable`, the spawned `WebSocketServer.py` and
 TensorBoard subprocesses inherit the active environment automatically; no

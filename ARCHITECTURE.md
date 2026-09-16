@@ -619,6 +619,7 @@ Canonical run-mode matrix and commands are maintained in `docs/RUN_MODES.md`.
 **Purpose**: Simulation-based combinatorial optimization for air-corridor edge-group orientation using a binary Genetic Algorithm.
 
 Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtPath-GA/GA-Experiment1-Parameters.txt`.
+It includes bash-ready canonical CLI templates (multi-line and single-line) that enumerate the complete Ex1 flag surface.
 
 **Responsibilities**:
 - Loads lattice graph and builds corridor-group variables using the same grouping logic as `Visualize_Air_Corridor_Binary_Edge_Selection_updated.py`
@@ -636,7 +637,7 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
   - `invalid_count` remains `no_path_count + timeout_count` for GA invalid-pressure logic
 - Applies invalid rule tracking: `invalid_count = no_path_count + timeout_count` is still tracked for diagnostics
 - Caches evaluation results by `(chromosome_bitstring, seed_set_signature)`
-- Evaluates chromosome batches in parallel with a thread pool (`--workers`, default `18`) and cache-aware de-duplication
+- Evaluates chromosome batches in parallel with a thread pool (`--workers`, default `10`) and cache-aware de-duplication
 - Executes GA operators: tournament selection, uniform crossover, bit-flip mutation, elitism, generational replacement
 - Enforces GA runtime guards for stability in small diagnostics (`population >= 2`, `0 <= elitism <= population`, `workers >= 1`)
 - Enforces mutation probability guard: `0.0 <= --mutation-prob <= 1.0` (default `0.03`)
@@ -753,7 +754,7 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 - Reuses GA integrated simulation path by dynamically loading `GA-Experiment1.py` and using its `SimulationAdapter`
 - Registers the dynamically loaded GA module in `sys.modules` before execution to keep import-time decorators compatible
 - Uses the raw graph from `regular_lattice_graph.pkl` with original edge directions preserved
-- Executes `N` replications (default `100`) in parallel (`--workers`, default `24`)
+- Executes `N` replications (default `100`) in parallel (`--workers`, default `10`)
 - Captures GA-aligned per-replication metrics:
   - `collisions`
   - `no_path_count`
@@ -775,12 +776,24 @@ Parameter reference file (defaults + runtime GA behavior): `Experiments/Ex1-ShtP
 **Responsibilities**:
 - Builds and evaluates five corridor-orientation presets (all-forward, all-reverse, alternating, random A, random B)
 - Reuses `SimulationAdapter` from `GA-Experiment1.py`
-- Executes replications per orientation and writes per-orientation summaries (`--workers` default `18`)
+- Executes replications per orientation and writes per-orientation summaries (`--workers` default `10`)
+- `--replications` is applied per orientation, so total simulation count is `5 x --replications`
 
 **Output Artifacts**:
 - `graph_0..graph_4/directed_experiment.csv` (per-replication metrics)
 - `graph_0..graph_4/directed_summary.csv` (aggregate metrics including collision/fitness mean and std)
 - `graph_0..graph_4/directed_run_config.json` (config + seed info)
+
+#### 6c. Ex0 CLI Contract (`Experiments/Ex0-Baseline/EX0_CLI_Comand.txt`)
+
+**Purpose**: Single source of ready-to-paste command lines for both Ex0 runners.
+
+Both runners (6a and 6b) build their argument parser from the same 16 flags and
+differ only in the `--run-root` default. `EX0_CLI_Comand.txt` records the fully
+explicit invocation for each script in multi-line and single-line form, a
+per-flag reference with types and defaults, mock/command-mode variants, and the
+`--integrated-max-sim-time` caveat. Update it whenever an Ex0 runner flag is
+added, removed, or has its default changed.
 
 ## Logging Standardization (Fixed-Width Table)
 
@@ -1162,6 +1175,6 @@ required rather than merely recommended.
 
 ---
 
-**Last Updated**: 2026-09-09 - Added the Python dependency environment (`requirements.txt` / `requirements.lock.txt`, CPU-pinned `torch` for TensorBoard logging, `sys.executable` venv propagation)
+**Last Updated**: 2026-09-10 - Added Ex0/Ex1 CLI contract references (`Experiments/Ex0-Baseline/EX0_CLI_Comand.txt`, `Experiments/Ex1-ShtPath-GA/GA-Experiment1-Parameters.txt`) and aligned documented `--workers` defaults with code (`10`)
 **Documentation Version**: 2.0
 

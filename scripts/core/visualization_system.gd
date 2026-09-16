@@ -13,7 +13,7 @@ var terrain_gridmap: GridMap = null  # GridMap node for terrain visualization
 var gridmap_manager: GridMapManager = null  # Manager for terrain data and population
 
 # Movement and control variables
-var move_speed = 30000.0  # Speed for movement
+var move_speed = 1000000.0  # Speed for movement
 var rotation_speed = 0.001  # Speed of rotation with mouse
 var mouse_sensitivity = 0.001
 var camera_offset = Vector3(0, 5, 0)  # Offset from balloon position - slightly above center for better view

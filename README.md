@@ -475,6 +475,7 @@ Recommended rules:
 `Experiments/Ex1-ShtPath-GA/GA-Experiment1.py` runs a simulation-based Genetic Algorithm to optimize binary orientation settings for air-corridor edge groups:
 
 - Full parameter reference (defaults + runtime GA behavior): `Experiments/Ex1-ShtPath-GA/GA-Experiment1-Parameters.txt`
+  - Includes bash-ready canonical CLI command templates (multi-line and single-line, full flag surface).
 - **Decision variables**: one bit per contiguous corridor segment group (`0=forward`, `1=reverse`)
 - **Grouping source**: uses `identify_air_corridor_edge_groups()` from `Experiments/Ex1-ShtPath-GA/Visualize_Air_Corridor_Binary_Edge_Selection_updated.py`
 - **Grouping rule**: layer + corridor axis + fixed index + contiguous segment ID, with forward/reverse sets derived from grid-direction sign
@@ -506,7 +507,7 @@ Recommended rules:
   - `sensitivity-max-bits >= 0`
   - Reproduction step now safely handles `population == elitism` (fully elitist carry-over), preventing tiny-run crashes
   - Default `population` is set to `120` (override with `--population` as needed)
-  - Default `workers` is set to `18` for parallel batch evaluation (override with `--workers`)
+  - Default `workers` is set to `10` for parallel batch evaluation (override with `--workers`)
 - **Log mode** (`--log-mode`, default: `normal`):
   - `quiet`: Python `SIM_LOG_LEVEL=ERROR`, `SIM_LOG_FORMAT=json`; Godot `GA_LOG_LEVEL=quiet` (skips `simple_log.csv` and `godot_summary.json` in core writers)
   - `normal`: Python `SIM_LOG_LEVEL=INFO`, `SIM_LOG_FORMAT=table`; Godot `GA_LOG_LEVEL=normal`
@@ -597,10 +598,15 @@ TensorBoard behavior:
 This project currently includes two baseline scripts under `Experiments/Ex0-Baseline/`:
 
 - `Baseline Undirected Graph test.py`: runs replications on the original graph orientation (no optimization).
-- `Baseline Directed Graph 5 test.py`: evaluates five fixed directed-orientation configurations (all-forward, all-reverse, alternating, and two random variants), with default `--workers` set to `18`.
+- `Baseline Directed Graph 5 test.py`: evaluates five fixed directed-orientation configurations (all-forward, all-reverse, alternating, and two random variants). `--replications` is applied per configuration, so the total run count is five times that value.
 
 Both baseline scripts reuse the same Python+Godot integrated simulation path as `GA-Experiment1.py` (via `SimulationAdapter`) and output per-replication plus summary artifacts in their respective run folders.
 Both also report collision and fitness dispersion via standard deviation (`collisions_std`, `fitness_std`) in summary CSV outputs and terminal summaries.
+Both expose the same 16 CLI flags, differing only in the `--run-root` default (`baseline_runs` vs `directed_graph_5_runs`), and both default `--workers` to `10`.
+
+Ready-to-paste command lines with every flag set explicitly are kept in
+`Experiments/Ex0-Baseline/EX0_CLI_Comand.txt` (multi-line and single-line forms per script,
+plus a full flag reference and mock/command-mode variants).
 
 Example (original-orientation baseline):
 
@@ -675,7 +681,7 @@ python "Experiments/Ex0-Baseline/Baseline Undirected Graph test.py" \
 
 ---
 
-**Last Updated**: 2026-09-09 - Added pinned `requirements.txt` / `requirements.lock.txt` and the `.venv` setup workflow (CPU-only `torch` for TensorBoard logging); corrected the Python floor to 3.9+
+**Last Updated**: 2026-09-10 - Added Ex0 and Ex1 copy-paste CLI references (`Experiments/Ex0-Baseline/EX0_CLI_Comand.txt`, `Experiments/Ex1-ShtPath-GA/GA-Experiment1-Parameters.txt`) and aligned documented `--workers` defaults with code (`10`)
 **Godot Version**: 4.3 (GL Compatibility)
 **Python Version**: 3.9+
 
